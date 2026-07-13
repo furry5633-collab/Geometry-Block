@@ -13,20 +13,6 @@ export const CUBE_SKINS: Skin[] = [
   { id: 'cube_angry', name: 'Enojado' },
   { id: 'cube_cool', name: 'Gafas de Sol' },
   { id: 'cube_creeper', name: 'Creeper' },
-  { id: 'cube_spiral', name: 'Espiral' },
-  { id: 'cube_ninja', name: 'Ninja' },
-  { id: 'cube_demon', name: 'Demonio' },
-  { id: 'cube_skull', name: 'Calavera' },
-  { id: 'cube_crown', name: 'Corona' },
-  { id: 'cube_smile', name: 'Feliz' },
-  { id: 'cube_companion', name: 'Acompañante' },
-  { id: 'cube_iron', name: 'Hierro' },
-  { id: 'cube_kitty', name: 'Gatito 🐱' },
-  { id: 'cube_alien', name: 'Alienígena 👽' },
-  { id: 'cube_steve', name: 'Steve 🟩' },
-  { id: 'cube_pacman', name: 'Pacman 🍕' },
-  { id: 'cube_matrix', name: 'Matrix 📟' },
-  { id: 'cube_steampunk', name: 'Steampunk ⚙️' },
 ];
 
 export const WAVE_SKINS: Skin[] = [
@@ -34,18 +20,6 @@ export const WAVE_SKINS: Skin[] = [
   { id: 'wave_dual', name: 'Doble Punta' },
   { id: 'wave_cyber', name: 'Ciber Nave' },
   { id: 'wave_spiked', name: 'Puntas Aladas' },
-  { id: 'wave_diamond', name: 'Diamante' },
-  { id: 'wave_phoenix', name: 'Fénix' },
-  { id: 'wave_saw', name: 'Sierra Wave' },
-  { id: 'wave_skull', name: 'Calavera Wave' },
-  { id: 'wave_demon', name: 'Wave Infernal' },
-  { id: 'wave_ufo', name: 'Mini OVNI' },
-  { id: 'wave_rocket', name: 'Cohete' },
-  { id: 'wave_angel', name: 'Alas Celestiales' },
-  { id: 'wave_bat', name: 'Murciélago 🦇' },
-  { id: 'wave_vortex', name: 'Vórtice 🌀' },
-  { id: 'wave_spear', name: 'Arpón 🔱' },
-  { id: 'wave_alien', name: 'Ovni Wave 🛸' },
 ];
 
 export const ROBOT_SKINS: Skin[] = [
@@ -53,18 +27,6 @@ export const ROBOT_SKINS: Skin[] = [
   { id: 'robot_gladiator', name: 'Gladiador' },
   { id: 'robot_cat', name: 'Neko Cyber' },
   { id: 'robot_heavy', name: 'Armadura Pesada' },
-  { id: 'robot_cyclops', name: 'Cíclope' },
-  { id: 'robot_steampunk', name: 'Engranajes' },
-  { id: 'robot_demon', name: 'Demonio Bot' },
-  { id: 'robot_angel', name: 'Serafín' },
-  { id: 'robot_pirate', name: 'Pirata' },
-  { id: 'robot_samurai', name: 'Samurái' },
-  { id: 'robot_astro', name: 'Astronauta' },
-  { id: 'robot_ninja', name: 'Ninja Bot' },
-  { id: 'robot_terminator', name: 'Terminator 🦾' },
-  { id: 'robot_bunny', name: 'Conejito 🐰' },
-  { id: 'robot_spider', name: 'Arácnido 🕷️' },
-  { id: 'robot_wizard', name: 'Mago 🧙' },
 ];
 
 export const BALL_SKINS: Skin[] = [
@@ -72,18 +34,6 @@ export const BALL_SKINS: Skin[] = [
   { id: 'ball_saw', name: 'Sierras' },
   { id: 'ball_target', name: 'Blanco' },
   { id: 'ball_biohazard', name: 'Peligro' },
-  { id: 'ball_turbine', name: 'Turbina' },
-  { id: 'ball_yinyang', name: 'Yin-Yang' },
-  { id: 'ball_skull', name: 'Calavera Rueda' },
-  { id: 'ball_star', name: 'Estrella' },
-  { id: 'ball_atom', name: 'Átomo' },
-  { id: 'ball_flower', name: 'Girasol' },
-  { id: 'ball_shield', name: 'Escudo' },
-  { id: 'ball_vortex', name: 'Vórtice' },
-  { id: 'ball_cookie', name: 'Galleta 🍪' },
-  { id: 'ball_spiral', name: 'Espiral Rueda 🌀' },
-  { id: 'ball_pokeball', name: 'Pokéball 🔴' },
-  { id: 'ball_gear', name: 'Engranaje ⚙️' },
 ];
 
 export const COLOR_PALETTE = [

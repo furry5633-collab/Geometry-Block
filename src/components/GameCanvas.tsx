@@ -40,6 +40,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
   const [hasWon, setHasWon] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
+  const [collectedCoins, setCollectedCoins] = useState<string[]>([]);
 
   // References to keep state updated in the fast RAF (RequestAnimationFrame) loop
   const stateRef = useRef({
@@ -56,6 +57,13 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     rotation: 0,
     waveTrail: [] as { x: number; y: number }[],
     particles: [] as Particle[],
+    shards: [] as { x: number; y: number; w: number; h: number; vx: number; vy: number; angle: number; vAngle: number; color: string; opacity: number; life: number; maxLife: number }[],
+    winSequenceActive: false,
+    winSequenceProgress: 0,
+    winPortalX: 0,
+    winPortalY: 0,
+    winPlayerStartX: 0,
+    winPlayerStartY: 0,
     screenShake: 0,
     attempts: 1,
     speedMultiplier: 1.0, // 1x, 2x, 3x
@@ -69,6 +77,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     levelPassed: false,
     animationTick: 0,
     levelStartTime: Date.now(),
+    collectedCoins: [] as string[],
   });
 
   // Calculate overall level end coordinate
@@ -90,6 +99,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
   const restartLevel = (incrementAttempts = true) => {
     const state = stateRef.current;
     state.cameraX = 0;
+    state.playerX = 150;
     state.playerY = GROUND_Y_PIXELS - state.playerSize;
     state.playerYVelocity = 0;
     state.gamemode = 'cube';
@@ -100,6 +110,13 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     state.rotation = 0;
     state.waveTrail = [];
     state.particles = [];
+    state.shards = [];
+    state.winSequenceActive = false;
+    state.winSequenceProgress = 0;
+    state.winPortalX = 0;
+    state.winPortalY = 0;
+    state.winPlayerStartX = 0;
+    state.winPlayerStartY = 0;
     state.screenShake = 0;
     state.speedMultiplier = 1.0;
     state.lastPortalId = '';
@@ -108,6 +125,8 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     state.lastRingId = '';
     state.levelPassed = false;
     state.levelStartTime = Date.now();
+    state.collectedCoins = [];
+    setCollectedCoins([]);
     
     if (incrementAttempts) {
       setAttempts(prev => {
@@ -188,7 +207,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     const size = state.playerSize;
 
     levelElements.forEach(el => {
-      if (el.type === 'ring_yellow' || el.type === 'ring_red') {
+      if (el.type === 'ring_yellow' || el.type === 'ring_red' || el.type === 'ring_blue') {
         const rx = gridToX(el.x);
         const ry = gridToY(el.y);
         // Overlap check
@@ -197,16 +216,27 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
           py + size > ry && py < ry + TILE_SIZE
         ) {
           if (state.lastRingId !== el.id) {
-            // Trigger jump in mid-air!
-            const force = el.type === 'ring_red' ? -11.5 : -8.8;
-            state.playerYVelocity = force * state.gravityDirection;
-            state.isGrounded = false;
             state.lastRingId = el.id;
             
-            // Particles
-            const color = el.type === 'ring_red' ? '#FF0000' : '#FFFF00';
-            spawnRingBurst(rx + TILE_SIZE / 2, ry + TILE_SIZE / 2, color);
-            if (soundEnabled) audio.playRing();
+            if (el.type === 'ring_blue') {
+              // Gravity swap ring: reverse gravity direction and give a tiny hover boost
+              state.gravityDirection *= -1;
+              state.playerYVelocity = -3.5 * state.gravityDirection;
+              state.isGrounded = false;
+              
+              spawnRingBurst(rx + TILE_SIZE / 2, ry + TILE_SIZE / 2, '#22d3ee');
+              if (soundEnabled) audio.playGravitySwap();
+            } else {
+              // Trigger jump in mid-air!
+              const force = el.type === 'ring_red' ? -11.5 : -8.8;
+              state.playerYVelocity = force * state.gravityDirection;
+              state.isGrounded = false;
+              
+              // Particles
+              const color = el.type === 'ring_red' ? '#FF0000' : '#FFFF00';
+              spawnRingBurst(rx + TILE_SIZE / 2, ry + TILE_SIZE / 2, color);
+              if (soundEnabled) audio.playRing();
+            }
           }
         }
       }
@@ -339,14 +369,71 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
       const reachedEnd = state.cameraX >= state.levelLengthPixels;
       const threeSecondsPassed = elapsedMs >= 3000;
 
-      if (reachedEnd && threeSecondsPassed && !state.levelPassed) {
-        state.levelPassed = true;
-        setPercentage(100);
-        setHasWon(true);
-        if (onProgress) {
-          onProgress(100, 1, true);
+      if (reachedEnd && threeSecondsPassed && !state.levelPassed && !state.winSequenceActive) {
+        state.winSequenceActive = true;
+        state.winSequenceProgress = 0;
+        state.winPortalX = state.playerX + 300; // spawn portal 300px ahead on screen
+        state.winPortalY = GROUND_Y_PIXELS - 120; // floating above
+        state.winPlayerStartX = state.playerX;
+        state.winPlayerStartY = state.playerY;
+
+        // Spawn beautiful neon red-cyan portal opening particles
+        for (let i = 0; i < 25; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 40 + Math.random() * 40;
+          state.particles.push({
+            x: state.cameraX + state.winPortalX + Math.cos(angle) * dist,
+            y: state.winPortalY + Math.sin(angle) * dist,
+            vx: -Math.cos(angle) * 3,
+            vy: -Math.sin(angle) * 3,
+            color: '#00FFFF',
+            size: 3 + Math.random() * 4,
+            life: 0,
+            maxLife: 30 + Math.random() * 15,
+          });
         }
-        if (soundEnabled) audio.playWin();
+      }
+
+      if (state.winSequenceActive) {
+        // Horizontally drift slowly
+        state.winSequenceProgress += 0.015; // Complete in ~66 frames
+        const t = state.winSequenceProgress;
+        
+        // Custom cubic ease-out for a smooth visual lock-on to the portal
+        const ease = t * (2 - t);
+        
+        state.playerX = state.winPlayerStartX + (state.winPortalX - state.winPlayerStartX) * ease;
+        state.playerY = state.winPlayerStartY + (state.winPortalY - state.winPlayerStartY) * ease;
+        
+        // Vortex spin!
+        state.rotation += 0.25;
+
+        // Visual exhaust trails
+        if (Math.random() > 0.3) {
+          state.particles.push({
+            x: state.playerX + state.playerSize / 2,
+            y: state.playerY + state.playerSize / 2,
+            vx: -2 - Math.random() * 3,
+            vy: (Math.random() - 0.5) * 2,
+            color: '#00FFFF',
+            size: 2.5 + Math.random() * 3,
+            life: 0,
+            maxLife: 20 + Math.random() * 10,
+          });
+        }
+
+        if (t >= 1.0) {
+          state.levelPassed = true;
+          setPercentage(100);
+          setHasWon(true);
+          if (onProgress) {
+            onProgress(100, 1, true);
+          }
+          if (soundEnabled) audio.playWin();
+          return;
+        }
+
+        // Bypass normal game physics
         return;
       }
 
@@ -576,17 +663,52 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
             }
           }
 
-          // JUMP PADS (Auto leap)
-          else if (el.type === 'pad_yellow' || el.type === 'pad_red') {
+          // JUMP PADS (Auto leap or Gravity swap)
+          else if (el.type === 'pad_yellow' || el.type === 'pad_red' || el.type === 'pad_blue') {
             if (state.lastPadId !== el.id) {
               state.lastPadId = el.id;
-              // Auto launch: red mega pads launch the player with extreme speed!
-              const force = el.type === 'pad_red' ? -14.5 : -10.5;
-              state.playerYVelocity = force * state.gravityDirection;
-              state.isGrounded = false;
-              const color = el.type === 'pad_red' ? '#FF0000' : '#FFFF00';
-              spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, color);
-              if (soundEnabled) audio.playJump();
+              
+              if (el.type === 'pad_blue') {
+                // Gravity swap pad: swap gravity, give hover boost in new gravity direction
+                state.gravityDirection *= -1;
+                state.playerYVelocity = -5.5 * state.gravityDirection;
+                state.isGrounded = false;
+                spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, '#22d3ee');
+                if (soundEnabled) audio.playGravitySwap();
+              } else {
+                // Auto launch: red mega pads launch the player with extreme speed!
+                const force = el.type === 'pad_red' ? -14.5 : -10.5;
+                state.playerYVelocity = force * state.gravityDirection;
+                state.isGrounded = false;
+                const color = el.type === 'pad_red' ? '#FF0000' : '#FFFF00';
+                spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, color);
+                if (soundEnabled) audio.playJump();
+              }
+            }
+          }
+
+          // SAWBLADE (Deadly rotating obstacles)
+          else if (el.type === 'sawblade') {
+            const shrink = TILE_SIZE * 0.15;
+            if (
+              px + pSize - shrink > elX &&
+              px + shrink < elX + TILE_SIZE &&
+              py + pSize - shrink > elY &&
+              py + shrink < elY + TILE_SIZE
+            ) {
+              triggerDeath();
+            }
+          }
+
+          // COIN (Gold collectible coins)
+          else if (el.type === 'coin') {
+            if (!state.collectedCoins.includes(el.id)) {
+              state.collectedCoins.push(el.id);
+              setCollectedCoins([...state.collectedCoins]);
+              
+              // Nice yellow gold burst!
+              spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, '#fbbf24');
+              if (soundEnabled) audio.playCoinCollect();
             }
           }
 
@@ -651,19 +773,56 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         onProgress(currentProgress, 1, false);
       }
 
-      // Spawn huge blast of colored explosion sparks
-      for (let i = 0; i < 35; i++) {
+      // Generate a grid of individual rigid shards to shatter the player character
+      const shardCols = 4;
+      const shardRows = 4;
+      const sw = state.playerSize / shardCols;
+      const sh = state.playerSize / shardRows;
+      state.shards = [];
+
+      for (let r = 0; r < shardRows; r++) {
+        for (let c = 0; c < shardCols; c++) {
+          const sx = state.playerX + c * sw;
+          const sy = state.playerY + r * sh;
+          
+          // Compute direction away from player center for explosion force
+          const cx = state.playerX + state.playerSize / 2;
+          const cy = state.playerY + state.playerSize / 2;
+          const dx = (sx + sw / 2) - cx;
+          const dy = (sy + sh / 2) - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const force = 1.5 + Math.random() * 4.0;
+
+          state.shards.push({
+            x: sx + sw / 2,
+            y: sy + sh / 2,
+            w: sw,
+            h: sh,
+            vx: (dx / dist) * force + (Math.random() - 0.5) * 2.0,
+            vy: (dy / dist) * force - (2.0 + Math.random() * 3.5), // fling upwards
+            angle: Math.random() * Math.PI * 2,
+            vAngle: (Math.random() - 0.5) * 0.3,
+            color: (r + c) % 2 === 0 ? skins.primaryColor : skins.secondaryColor,
+            opacity: 1.0,
+            life: 0,
+            maxLife: 45 + Math.random() * 20
+          });
+        }
+      }
+
+      // Spawn some smaller trailing sparks as well
+      for (let i = 0; i < 25; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 3.5 + Math.random() * 5.5;
+        const speed = 2.5 + Math.random() * 5.0;
         state.particles.push({
           x: state.playerX + state.playerSize / 2,
           y: state.playerY + state.playerSize / 2,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           color: Math.random() > 0.5 ? skins.primaryColor : skins.secondaryColor,
-          size: 4 + Math.random() * 6,
+          size: 3 + Math.random() * 4,
           life: 0,
-          maxLife: 40 + Math.random() * 25,
+          maxLife: 35 + Math.random() * 20,
         });
       }
 
@@ -709,6 +868,8 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     // Update particles position/life
     const updateParticles = () => {
       const state = stateRef.current;
+      
+      // Update particles
       state.particles = state.particles.filter(p => {
         p.x += p.vx;
         p.y += p.vy;
@@ -718,6 +879,20 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         p.vy *= 0.98;
         return p.life < p.maxLife;
       });
+
+      // Update shards (physical player cracking pieces)
+      if (state.shards && state.shards.length > 0) {
+        state.shards.forEach(shard => {
+          shard.x += shard.vx;
+          shard.y += shard.vy;
+          shard.vy += 0.22; // gravity pulling them down
+          shard.vx *= 0.98; // horizontal drag
+          shard.angle += shard.vAngle;
+          shard.life++;
+          shard.opacity = Math.max(0, 1 - shard.life / shard.maxLife);
+        });
+        state.shards = state.shards.filter(s => s.life < s.maxLife);
+      }
 
       // Reduce screenshake
       if (state.screenShake > 0) {
@@ -835,6 +1010,17 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         ctx.strokeRect(-TILE_SIZE / 4, -TILE_SIZE / 4, TILE_SIZE / 2, TILE_SIZE / 2);
       }
 
+      else if (el.type === 'fake_block') {
+        // Translucent/semi-invisible passing block with dashed line indicator
+        ctx.fillStyle = 'rgba(17, 24, 39, 0.4)';
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.fillRect(-TILE_SIZE / 2 + 1, -TILE_SIZE / 2 + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+        ctx.strokeRect(-TILE_SIZE / 2 + 1, -TILE_SIZE / 2 + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+        ctx.setLineDash([]); // Reset line dash
+      }
+
       else if (el.type === 'spike') {
         // Classic deadly triangle spike
         ctx.fillStyle = '#374151';
@@ -856,6 +1042,46 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         ctx.lineTo(TILE_SIZE / 4, TILE_SIZE / 2 - 4);
         ctx.lineTo(-TILE_SIZE / 4, TILE_SIZE / 2 - 4);
         ctx.closePath();
+        ctx.stroke();
+      }
+
+      else if (el.type === 'spike_inverted') {
+        // Ceiling spike pointing downwards
+        ctx.fillStyle = '#4b5563';
+        ctx.strokeStyle = '#EF4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, TILE_SIZE / 2 - 3); // tip points down
+        ctx.lineTo(TILE_SIZE / 2 - 3, -TILE_SIZE / 2 + 1); // top-right
+        ctx.lineTo(-TILE_SIZE / 2 + 3, -TILE_SIZE / 2 + 1); // top-left
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner fire line
+        ctx.strokeStyle = '#F97316';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, TILE_SIZE / 2 - 10);
+        ctx.lineTo(TILE_SIZE / 4, -TILE_SIZE / 2 + 4);
+        ctx.lineTo(-TILE_SIZE / 4, -TILE_SIZE / 2 + 4);
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      else if (el.type === 'spike_small') {
+        // Smaller cute spike
+        ctx.fillStyle = '#374151';
+        ctx.strokeStyle = '#F87171';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        const sw = TILE_SIZE * 0.3;
+        const sh = TILE_SIZE * 0.35;
+        ctx.moveTo(0, -sh + TILE_SIZE / 2); // top tip
+        ctx.lineTo(sw, TILE_SIZE / 2 - 1); // bottom-right
+        ctx.lineTo(-sw, TILE_SIZE / 2 - 1); // bottom-left
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
       }
 
@@ -929,35 +1155,132 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         ctx.fillText(portalName, 0, -TILE_SIZE * 1.3);
       }
 
-      else if (el.type === 'pad_yellow') {
+      else if (el.type === 'pad_yellow' || el.type === 'pad_red' || el.type === 'pad_blue') {
         // Jump Pad base
-        ctx.fillStyle = '#374151';
+        let baseColor = '#374151';
+        let springColor = '#FFFF00';
+        if (el.type === 'pad_red') {
+          baseColor = '#450a0a';
+          springColor = '#FF0000';
+        } else if (el.type === 'pad_blue') {
+          baseColor = '#083344';
+          springColor = '#06b6d4';
+        }
+        
+        ctx.fillStyle = baseColor;
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
         ctx.fillRect(-TILE_SIZE * 0.4, TILE_SIZE * 0.25, TILE_SIZE * 0.8, TILE_SIZE * 0.2);
         ctx.strokeRect(-TILE_SIZE * 0.4, TILE_SIZE * 0.25, TILE_SIZE * 0.8, TILE_SIZE * 0.2);
 
-        // Yellow bouncing spring
-        ctx.fillStyle = '#FFFF00';
+        // Bouncing spring (Yellow / Red / Blue)
+        ctx.fillStyle = springColor;
         ctx.beginPath();
         ctx.ellipse(0, TILE_SIZE * 0.2, TILE_SIZE * 0.35, TILE_SIZE * 0.1, 0, 0, Math.PI, true);
         ctx.fill();
         ctx.stroke();
       }
 
-      else if (el.type === 'ring_yellow') {
+      else if (el.type === 'ring_yellow' || el.type === 'ring_red' || el.type === 'ring_blue') {
         // Floating circular neon trigger ring
         const ringPulse = Math.sin(state.animationTick * 0.2) * 2;
-        ctx.strokeStyle = '#FFFF00';
+        let color = '#FFFF00';
+        if (el.type === 'ring_red') {
+          color = '#FF0000';
+        } else if (el.type === 'ring_blue') {
+          color = '#06b6d4';
+        }
+        
+        ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(0, 0, TILE_SIZE * 0.3 + ringPulse * 0.3, 0, 2 * Math.PI);
         ctx.stroke();
 
-        ctx.fillStyle = '#FFFF00' + '33';
+        ctx.fillStyle = color + '33';
         ctx.beginPath();
         ctx.arc(0, 0, TILE_SIZE * 0.2, 0, 2 * Math.PI);
         ctx.fill();
+      }
+
+      else if (el.type === 'sawblade') {
+        // Spinning metal saw blade
+        const angle = (state.animationTick * 0.08) % (Math.PI * 2);
+        ctx.rotate(angle);
+
+        // Draw outer saw teeth
+        ctx.fillStyle = '#4b5563';
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        const teethCount = 12;
+        const outerRad = TILE_SIZE * 0.5;
+        const innerRad = TILE_SIZE * 0.35;
+        
+        for (let t = 0; t < teethCount; t++) {
+          const theta = (t * Math.PI * 2) / teethCount;
+          const nextTheta = ((t + 0.5) * Math.PI * 2) / teethCount;
+          
+          ctx.lineTo(Math.cos(theta) * outerRad, Math.sin(theta) * outerRad);
+          ctx.lineTo(Math.cos(nextTheta) * innerRad, Math.sin(nextTheta) * innerRad);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner core
+        ctx.fillStyle = '#9ca3af';
+        ctx.beginPath();
+        ctx.arc(0, 0, TILE_SIZE * 0.22, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+
+        // Center spiral
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, TILE_SIZE * 0.1, 0, Math.PI, false);
+        ctx.stroke();
+      }
+
+      else if (el.type === 'coin') {
+        const isCollected = state.collectedCoins.includes(el.id);
+        
+        ctx.save();
+        if (isCollected) {
+          // Semi-transparent ghost coin indicating it was already picked up
+          ctx.globalAlpha = 0.25;
+        }
+        
+        // Spin and float effect
+        const bounce = Math.sin(state.animationTick * 0.1) * 2;
+        ctx.translate(0, bounce);
+        const spinScale = Math.cos(state.animationTick * 0.05);
+        ctx.scale(Math.abs(spinScale) < 0.1 ? 0.1 : spinScale, 1);
+
+        // Gold outer rim
+        ctx.fillStyle = '#fbbf24';
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, TILE_SIZE * 0.4, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner coin face
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(0, 0, TILE_SIZE * 0.28, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Stylized letter "C"
+        ctx.fillStyle = '#fffbeb';
+        ctx.font = '900 12px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('C', 0, 0);
+        
+        ctx.restore();
       }
 
       else if (el.type.startsWith('speed_')) {
@@ -1030,11 +1353,76 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     });
     ctx.globalAlpha = 1.0; // reset
 
+    // 5.5. Draw Shards (Player fracturing on death)
+    if (isGameOver && state.shards && state.shards.length > 0) {
+      state.shards.forEach(shard => {
+        ctx.save();
+        ctx.translate(shard.x, shard.y);
+        ctx.rotate(shard.angle);
+        ctx.globalAlpha = shard.opacity;
+        ctx.fillStyle = shard.color;
+        ctx.fillRect(-shard.w / 2, -shard.h / 2, shard.w, shard.h);
+        
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-shard.w / 2, -shard.h / 2, shard.w, shard.h);
+        ctx.restore();
+      });
+      ctx.globalAlpha = 1.0; // reset
+    }
+
+    // 5.6. Draw Neon Victory Exit Portal
+    if (state.winSequenceActive) {
+      const portalX = state.winPortalX;
+      const portalY = state.winPortalY;
+      
+      ctx.save();
+      ctx.translate(portalX, portalY);
+      
+      const pTick = state.animationTick;
+      const pulse = Math.sin(pTick * 0.25) * 8;
+      const ringColor = '#00FFFF'; // Beautiful neon cyan/teal
+      
+      ctx.shadowColor = ringColor;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, TILE_SIZE * 0.65 + pulse * 0.2, TILE_SIZE * 1.5, 0, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0; // reset
+      
+      // Inner spinning sparkles
+      ctx.fillStyle = '#FFFFFF';
+      for (let i = 0; i < 4; i++) {
+        const angle = pTick * 0.08 + (i * Math.PI / 2);
+        const sx = Math.cos(angle) * (TILE_SIZE * 0.45);
+        const sy = Math.sin(angle) * (TILE_SIZE * 0.9);
+        ctx.fillRect(sx - 2, sy - 4, 4, 8);
+      }
+      
+      // Portal label
+      ctx.fillStyle = '#00FFFF';
+      ctx.font = '900 11px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('▼ VICTORY ▼', 0, -TILE_SIZE * 1.8);
+      ctx.restore();
+    }
+
     // 6. Draw Player Character
     if (!isGameOver) {
-      const pSize = state.playerSize;
-      const px = state.playerX + pSize / 2;
-      const py = state.playerY + pSize / 2;
+      let pSize = state.playerSize;
+      
+      // Shrink size on entering portal
+      if (state.winSequenceActive && state.winSequenceProgress > 0.7) {
+        const factor = (1.0 - state.winSequenceProgress) / 0.3;
+        pSize *= Math.max(0, factor);
+      }
+      
+      const px = state.playerX + state.playerSize / 2; // Keep centered around normal size anchor
+      const py = state.playerY + state.playerSize / 2;
 
       // Select equipped skin
       const equippedCube = skins.cube;
@@ -1076,10 +1464,21 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
           <div className="text-xs font-mono font-bold w-10 text-right">{percentage}%</div>
         </div>
 
-        {/* Attempts Label */}
-        <div className="bg-slate-900/80 backdrop-blur px-4 py-2 rounded-lg border border-slate-700/50 text-white pointer-events-auto font-mono text-sm font-bold shadow-md flex items-center gap-2">
-          <span className="text-pink-400">INTENTO:</span>
-          <span className="text-xl text-yellow-300 font-black">{attempts}</span>
+        {/* Attempts Label & Coins Counter */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {levelElements.some(el => el.type === 'coin') && (
+            <div className="bg-slate-900/80 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-700/50 text-white font-mono text-xs font-black shadow-md flex items-center gap-1">
+              <span className="text-yellow-400 animate-pulse text-base">🪙</span>
+              <span className="text-yellow-300 text-sm">
+                {collectedCoins.length}/{levelElements.filter(el => el.type === 'coin').length}
+              </span>
+            </div>
+          )}
+
+          <div className="bg-slate-900/80 backdrop-blur px-4 py-2 rounded-lg border border-slate-700/50 text-white font-mono text-sm font-bold shadow-md flex items-center gap-2">
+            <span className="text-pink-400">INTENTO:</span>
+            <span className="text-xl text-yellow-300 font-black">{attempts}</span>
+          </div>
         </div>
 
         {/* HUD Controls */}

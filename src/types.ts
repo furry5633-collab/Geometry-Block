@@ -23,7 +23,11 @@ export type ElementType =
   | 'spike_small'    // Smaller, easier spike (deadly)
   | 'fake_block'     // Pass-through block with no collision
   | 'pad_red'        // Red mega jump pad (high launch)
-  | 'ring_red';      // Red mega jump ring (high mid-air jump)
+  | 'ring_red'       // Red mega jump ring (high mid-air jump)
+  | 'ring_blue'      // Blue gravity swap ring (tap in mid-air to reverse gravity)
+  | 'pad_blue'       // Blue gravity swap pad (swaps gravity on contact)
+  | 'sawblade'       // Deadly spinning saw obstacle
+  | 'coin';          // Golden secret coin to collect
 
 export interface LevelElement {
   id: string;

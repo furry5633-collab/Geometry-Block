@@ -45,15 +45,19 @@ const BRUSH_OPTIONS: BrushOption[] = [
   { type: 'slope_r', name: 'Rampa Sube', color: 'bg-slate-700 border-slate-500 text-slate-300', symbol: '◢', category: 'blocks' },
   { type: 'slope_l', name: 'Rampa Baja', color: 'bg-slate-700 border-slate-500 text-slate-300', symbol: '◣', category: 'blocks' },
   { type: 'fake_block', name: 'Bloque Falso', color: 'bg-slate-800 border-dashed border-slate-600 text-slate-400', symbol: '░', category: 'blocks' },
+  { type: 'coin', name: 'Moneda Oro', color: 'bg-yellow-950/60 border-yellow-500 text-yellow-300', symbol: '🪙', category: 'blocks' },
   // Hazards
   { type: 'spike', name: 'Pico Letal', color: 'bg-rose-950 border-rose-600 text-rose-400', symbol: '▲', category: 'hazards' },
   { type: 'spike_inverted', name: 'Pico Techo', color: 'bg-rose-950/80 border-dashed border-rose-500 text-rose-300', symbol: '▼', category: 'hazards' },
   { type: 'spike_small', name: 'Pico Pequeño', color: 'bg-red-950 border-red-700 text-red-400', symbol: '▴', category: 'hazards' },
+  { type: 'sawblade', name: 'Sierra Girar', color: 'bg-slate-800 border-neutral-600 text-white', symbol: '⚙️', category: 'hazards' },
   // Pads
   { type: 'pad_yellow', name: 'Plataforma Salto', color: 'bg-amber-950 border-yellow-500 text-yellow-300', symbol: '▰', category: 'pads' },
   { type: 'ring_yellow', name: 'Anillo Salto', color: 'bg-yellow-950 border-yellow-400 text-yellow-400', symbol: '○', category: 'pads' },
   { type: 'pad_red', name: 'Mega Plataforma', color: 'bg-red-950 border-red-500 text-red-300', symbol: '▰▰', category: 'pads' },
   { type: 'ring_red', name: 'Mega Anillo', color: 'bg-red-950 border-red-400 text-red-400', symbol: '◎', category: 'pads' },
+  { type: 'pad_blue', name: 'Pad Gravedad', color: 'bg-blue-950 border-blue-500 text-blue-300', symbol: '▰', category: 'pads' },
+  { type: 'ring_blue', name: 'Anillo Gravedad', color: 'bg-blue-950 border-blue-400 text-blue-400', symbol: '○', category: 'pads' },
   // Portals
   { type: 'portal_cube', name: 'Portal Cubo', color: 'bg-emerald-950 border-emerald-500 text-emerald-300', symbol: '🄲', category: 'portals' },
   { type: 'portal_wave', name: 'Portal Wave', color: 'bg-cyan-950 border-cyan-400 text-cyan-300', symbol: '🅞', category: 'portals' },
@@ -64,6 +68,161 @@ const BRUSH_OPTIONS: BrushOption[] = [
   { type: 'speed_2x', name: 'Velocidad x2', color: 'bg-emerald-900/40 border-emerald-600 text-emerald-400', symbol: '»»', category: 'speeds' },
   { type: 'speed_3x', name: 'Velocidad x3', color: 'bg-cyan-900/40 border-cyan-500 text-cyan-400', symbol: '»»»', category: 'speeds' },
 ];
+
+export const renderVisualElement = (type: ElementType) => {
+  switch (type) {
+    case 'block':
+      return (
+        <div className="w-full h-full bg-[#111827] border-[1.5px] border-[#00FF00] flex items-center justify-center p-[1px] rounded-[3px]">
+          <div className="w-full h-full border border-[#00FF00]/40 bg-[#1F2937]" />
+        </div>
+      );
+    case 'fake_block':
+      return (
+        <div className="w-full h-full bg-slate-900/40 border-2 border-dashed border-slate-500/50 rounded-[3px]" />
+      );
+    case 'slope_r':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <polygon points="0,40 40,40 40,0" fill="#111827" stroke="#00FF00" strokeWidth="2.5" />
+          <polygon points="10,40 40,40 40,10" fill="#1F2937" stroke="#00FF00" strokeWidth="1" opacity="0.6" />
+        </svg>
+      );
+    case 'slope_l':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <polygon points="0,40 40,40 0,0" fill="#111827" stroke="#00FF00" strokeWidth="2.5" />
+          <polygon points="0,40 30,40 0,10" fill="#1F2937" stroke="#00FF00" strokeWidth="1" opacity="0.6" />
+        </svg>
+      );
+    case 'spike':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <polygon points="20,4 36,36 4,36" fill="#374151" stroke="#FF3B30" strokeWidth="2" />
+          <polygon points="20,15 28,34 12,34" fill="#FF4500" opacity="0.8" />
+        </svg>
+      );
+    case 'spike_inverted':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <polygon points="20,36 36,4 4,4" fill="#374151" stroke="#FF3B30" strokeWidth="2" />
+          <polygon points="20,25 28,6 12,6" fill="#FF4500" opacity="0.8" />
+        </svg>
+      );
+    case 'spike_small':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-1">
+          <polygon points="20,12 32,36 8,36" fill="#374151" stroke="#F87171" strokeWidth="2.5" />
+        </svg>
+      );
+    case 'sawblade':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-[2px] animate-spin" style={{ animationDuration: '4s' }}>
+          <circle cx="20" cy="20" r="11" fill="#4B5563" stroke="#9CA3AF" strokeWidth="1.5" />
+          <path d="M 20 4 L 23 11 L 31 9 L 27 16 L 35 19 L 27 22 L 31 29 L 23 27 L 20 34 L 17 27 L 9 29 L 13 22 L 5 19 L 13 16 L 9 9 L 17 11 Z" fill="#374151" stroke="#D1D5DB" strokeWidth="1" strokeLinejoin="round" />
+          <circle cx="20" cy="20" r="4" fill="#111827" stroke="#374151" strokeWidth="1" />
+        </svg>
+      );
+    case 'coin':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-1">
+          <circle cx="20" cy="20" r="11" fill="#FEF08A" stroke="#EAB308" strokeWidth="2.2" />
+          <circle cx="20" cy="20" r="8" fill="none" stroke="#CA8A04" strokeWidth="1.2" />
+          <text x="20" y="24" fontFamily="Impact, sans-serif" fontSize="13" fontWeight="900" fill="#CA8A04" textAnchor="middle">C</text>
+        </svg>
+      );
+    case 'pad_yellow':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <rect x="6" y="26" width="28" height="8" fill="#374151" stroke="#000" strokeWidth="1.5" rx="1" />
+          <ellipse cx="20" cy="22" rx="10" ry="4" fill="#FFFF00" stroke="#000" strokeWidth="1" />
+        </svg>
+      );
+    case 'pad_blue':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <rect x="6" y="26" width="28" height="8" fill="#374151" stroke="#000" strokeWidth="1.5" rx="1" />
+          <ellipse cx="20" cy="22" rx="10" ry="4" fill="#22d3ee" stroke="#000" strokeWidth="1" />
+        </svg>
+      );
+    case 'pad_red':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center">
+          <rect x="4" y="26" width="32" height="8" fill="#450a0a" stroke="#000" strokeWidth="1.5" rx="1" />
+          <ellipse cx="20" cy="22" rx="12" ry="4" fill="#FF0000" stroke="#000" strokeWidth="1" />
+        </svg>
+      );
+    case 'ring_yellow':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-1">
+          <circle cx="20" cy="20" r="11" fill="rgba(255, 255, 0, 0.25)" stroke="#FFFF00" strokeWidth="2.5" />
+          <circle cx="20" cy="20" r="5" fill="none" stroke="#FFFF00" strokeWidth="1" strokeDasharray="2,2" />
+        </svg>
+      );
+    case 'ring_blue':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-1">
+          <circle cx="20" cy="20" r="11" fill="rgba(6, 182, 212, 0.25)" stroke="#22d3ee" strokeWidth="2.5" />
+          <circle cx="20" cy="20" r="5" fill="none" stroke="#22d3ee" strokeWidth="1" strokeDasharray="2,2" />
+        </svg>
+      );
+    case 'ring_red':
+      return (
+        <svg viewBox="0 0 40 40" className="w-full h-full flex items-center justify-center p-1">
+          <circle cx="20" cy="20" r="11" fill="rgba(255, 0, 0, 0.25)" stroke="#FF0000" strokeWidth="2.5" />
+          <circle cx="20" cy="20" r="5" fill="none" stroke="#FF0000" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'portal_cube':
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-950/40 border border-emerald-500 rounded-[5px] p-[2px] leading-none overflow-hidden">
+          <div className="w-2 h-2 bg-emerald-400 border border-black rounded-sm mb-[2px]" />
+          <span className="text-[6.5px] font-black text-emerald-400 tracking-tighter uppercase">CUBO</span>
+        </div>
+      );
+    case 'portal_wave':
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-cyan-950/40 border border-cyan-400 rounded-[5px] p-[2px] leading-none overflow-hidden">
+          <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[6px] border-b-cyan-300 mb-[2px]" />
+          <span className="text-[6.5px] font-black text-cyan-300 tracking-tighter uppercase">WAVE</span>
+        </div>
+      );
+    case 'portal_robot':
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-amber-950/40 border border-orange-500 rounded-[5px] p-[2px] leading-none overflow-hidden">
+          <div className="w-2 h-[6px] bg-orange-400 border border-black mb-[2px]" />
+          <span className="text-[6.5px] font-black text-orange-400 tracking-tighter uppercase">BOT</span>
+        </div>
+      );
+    case 'portal_ball':
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-pink-950/40 border border-pink-500 rounded-[5px] p-[2px] leading-none overflow-hidden">
+          <div className="w-2.5 h-2.5 bg-pink-400 border border-black rounded-full mb-[2px]" />
+          <span className="text-[6.5px] font-black text-pink-400 tracking-tighter uppercase">BALL</span>
+        </div>
+      );
+    case 'speed_1x':
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-blue-900/30 border border-blue-500 rounded-[3px] p-[1px]">
+          <span className="text-[9px] font-black text-blue-300 tracking-tighter">»</span>
+        </div>
+      );
+    case 'speed_2x':
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-emerald-900/30 border border-emerald-500 rounded-[3px] p-[1px]">
+          <span className="text-[9px] font-black text-emerald-300 tracking-tighter">»»</span>
+        </div>
+      );
+    case 'speed_3x':
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-cyan-900/30 border border-cyan-500 rounded-[3px] p-[1px]">
+          <span className="text-[9px] font-black text-cyan-300 tracking-tighter">»»»</span>
+        </div>
+      );
+    default:
+      return null;
+  }
+};
 
 export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest }: LevelBuilderProps) {
   const [levelName, setLevelName] = useState(initialLevel?.name || 'Mi Nivel Personalizado');
@@ -168,26 +327,139 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
     }
   };
 
-  const handleCellMouseDown = (x: number, y: number) => {
-    setIsMouseDown(true);
-    handleCellAction(x, y);
+  // Swipe mode (painting elements consecutively vs sliding to scroll)
+  const [swipeEnabled, setSwipeEnabled] = useState(false);
+
+  // Drag-to-scroll and swipe drag refs
+  const dragStartRef = useRef<{
+    clientX: number;
+    clientY: number;
+    scrollOffset: number;
+    hasMoved: boolean;
+    cellX: number;
+    cellY: number;
+  } | null>(null);
+
+  const handleCellMouseDown = (x: number, y: number, event: React.MouseEvent) => {
+    if (event.button !== 0) return; // Only left click
+    if (swipeEnabled) {
+      setIsMouseDown(true);
+      handleCellAction(x, y);
+    } else {
+      dragStartRef.current = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        scrollOffset: scrollOffset,
+        hasMoved: false,
+        cellX: x,
+        cellY: y,
+      };
+    }
   };
 
   const handleCellMouseEnter = (x: number, y: number) => {
-    if (isMouseDown) {
+    if (swipeEnabled && isMouseDown) {
       handleCellAction(x, y);
     }
   };
 
-  const handleMouseUpGlobal = () => {
-    setIsMouseDown(false);
+  const handleCellTouchStart = (x: number, y: number, event: React.TouchEvent) => {
+    if (swipeEnabled) {
+      setIsMouseDown(true);
+      handleCellAction(x, y);
+    } else {
+      if (event.touches.length === 0) return;
+      const touch = event.touches[0];
+      dragStartRef.current = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        scrollOffset: scrollOffset,
+        hasMoved: false,
+        cellX: x,
+        cellY: y,
+      };
+    }
   };
 
-  // Register mouse up listener to stop drag painting
+  // Register mouse & touch listeners globally to support swipe sliding
   useEffect(() => {
-    window.addEventListener('mouseup', handleMouseUpGlobal);
-    return () => window.removeEventListener('mouseup', handleMouseUpGlobal);
-  }, [isMouseDown, editorMode, activeBrush, elements]);
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!dragStartRef.current) return;
+
+      const dx = e.clientX - dragStartRef.current.clientX;
+      const dy = e.clientY - dragStartRef.current.clientY;
+
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        dragStartRef.current.hasMoved = true;
+      }
+
+      if (dragStartRef.current.hasMoved) {
+        // Horizontal scroll: roughly 24px of move scrolls 1 grid cell
+        const deltaCols = Math.round(dx / 24);
+        const newScroll = Math.max(
+          0,
+          Math.min(maxColumnsCount - visibleColumnsCount, dragStartRef.current.scrollOffset - deltaCols)
+        );
+        setScrollOffset(newScroll);
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (swipeEnabled) {
+        setIsMouseDown(false);
+      } else if (dragStartRef.current) {
+        // If they did NOT move, treat as a single click
+        if (!dragStartRef.current.hasMoved) {
+          handleCellAction(dragStartRef.current.cellX, dragStartRef.current.cellY);
+        }
+        dragStartRef.current = null;
+      }
+    };
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (!dragStartRef.current || e.touches.length === 0) return;
+      const touch = e.touches[0];
+
+      const dx = touch.clientX - dragStartRef.current.clientX;
+      const dy = touch.clientY - dragStartRef.current.clientY;
+
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        dragStartRef.current.hasMoved = true;
+      }
+
+      if (dragStartRef.current.hasMoved) {
+        const deltaCols = Math.round(dx / 24);
+        const newScroll = Math.max(
+          0,
+          Math.min(maxColumnsCount - visibleColumnsCount, dragStartRef.current.scrollOffset - deltaCols)
+        );
+        setScrollOffset(newScroll);
+      }
+    };
+
+    const handleGlobalTouchEnd = () => {
+      if (swipeEnabled) {
+        setIsMouseDown(false);
+      } else if (dragStartRef.current) {
+        if (!dragStartRef.current.hasMoved) {
+          handleCellAction(dragStartRef.current.cellX, dragStartRef.current.cellY);
+        }
+        dragStartRef.current = null;
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: true });
+    window.addEventListener('touchend', handleGlobalTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('touchmove', handleGlobalTouchMove);
+      window.removeEventListener('touchend', handleGlobalTouchEnd);
+    };
+  }, [scrollOffset, swipeEnabled, elements, editorMode, activeBrush, isMouseDown]);
 
   const getElementAt = (x: number, y: number): LevelElement | undefined => {
     return elements.find(el => el.x === x && el.y === y);
@@ -384,6 +656,20 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
             <Redo className="w-4 h-4 text-cyan-400" />
           </button>
 
+          {/* Swipe mode toggle */}
+          <button
+            onClick={() => setSwipeEnabled(!swipeEnabled)}
+            className={`w-10 h-10 rounded-xl border-2 border-black flex flex-col items-center justify-center font-black transition-all cursor-pointer ${
+              swipeEnabled
+                ? 'bg-green-500 hover:bg-green-400 text-black shadow-[0_0_10px_rgba(34,197,94,0.5)] border-green-300 scale-105'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+            }`}
+            title="Modo SWIPE: Activa para pintar arrastrando / Desactiva para deslizar y mover la pantalla con el dedo o ratón"
+          >
+            <span className="text-[7px] font-black uppercase tracking-tighter leading-none font-sans">SWIPE</span>
+            <div className={`w-1.5 h-1.5 rounded-full mt-0.5 ${swipeEnabled ? 'bg-black animate-pulse' : 'bg-slate-500'}`} />
+          </button>
+
           {/* Clean board */}
           <button
             onClick={handleClearAll}
@@ -421,12 +707,12 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
               </div>
 
               {/* Grid board canvas */}
-              <div className="flex-1 bg-black border-4 border-[#141414] rounded-2xl p-2 relative shadow-2xl shadow-black/60 overflow-hidden">
+              <div className="flex-1 bg-[#0c4391] border-4 border-[#09295c] rounded-2xl p-2 relative shadow-2xl shadow-black/60 overflow-hidden">
                 
                 {/* Horizontal line markers */}
-                <div className="absolute inset-0 grid grid-rows-8 pointer-events-none opacity-10">
+                <div className="absolute inset-0 grid grid-rows-8 pointer-events-none opacity-20">
                   {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="border-b border-cyan-500 w-full" />
+                    <div key={i} className="border-b border-cyan-400 w-full" />
                   ))}
                 </div>
 
@@ -438,18 +724,21 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
                         {Array.from({ length: visibleColumnsCount }).map((_, colIdx) => {
                           const cellX = scrollOffset + colIdx;
                           const element = getElementAt(cellX, rowY);
+                          const isStartCol = cellX === 3;
                           
                           // Styling
-                          let cellBg = 'bg-slate-900/40 hover:bg-slate-800/80 border-neutral-800/40';
+                          let cellBg = isStartCol 
+                            ? 'bg-emerald-950/20 hover:bg-emerald-900/40 border-[#00e1ff]/15 border-l-[3px] border-l-emerald-400' 
+                            : 'bg-[#1554aa]/40 hover:bg-[#1a62c4]/70 border-[#00e1ff]/15';
                           let cellText = 'text-slate-600';
-                          let symbol = '';
 
                           if (element) {
                             const match = BRUSH_OPTIONS.find(t => t.type === element.type);
                             if (match) {
                               cellBg = match.color;
-                              symbol = match.symbol;
-                              cellText = 'text-white';
+                              if (isStartCol) {
+                                cellBg += ' border-l-[3px] border-l-emerald-400/95';
+                              }
                             }
                           }
 
@@ -457,18 +746,27 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
                           const isSelectedInEdit = editorMode === 'edit' && selectedEditCoord && selectedEditCoord.x === cellX && selectedEditCoord.y === rowY;
                           if (isSelectedInEdit) {
                             cellBg = 'bg-yellow-400 text-black border-yellow-300 ring-2 ring-yellow-400 scale-105 z-20 animate-pulse';
-                            cellText = 'text-black';
+                            if (isStartCol) {
+                              cellBg += ' border-l-[3px] border-l-emerald-400/95';
+                            }
                           }
 
                           return (
                             <button
                               key={colIdx}
-                              onMouseDown={() => handleCellMouseDown(cellX, rowY)}
+                              onMouseDown={(e) => handleCellMouseDown(cellX, rowY, e)}
                               onMouseEnter={() => handleCellMouseEnter(cellX, rowY)}
-                              className={`h-8 border text-xs font-bold rounded flex items-center justify-center transition ${cellBg} ${cellText}`}
-                              title={`Celda: X:${cellX}, Y:${rowY}`}
+                              onTouchStart={(e) => handleCellTouchStart(cellX, rowY, e)}
+                              className={`h-8 border text-xs font-bold rounded flex items-center justify-center transition overflow-hidden p-[1px] relative ${cellBg} ${cellText}`}
+                              title={isStartCol ? `Punto de Inicio (Spawn) | Celda: X:${cellX}, Y:${rowY}` : `Celda: X:${cellX}, Y:${rowY}`}
                             >
-                              {symbol}
+                              {element ? (
+                                <div className="w-full h-full">
+                                  {renderVisualElement(element.type)}
+                                </div>
+                              ) : isStartCol && rowY === 0 ? (
+                                <span className="text-[7px] font-black text-emerald-400 animate-pulse uppercase leading-none tracking-tighter absolute">GO</span>
+                              ) : null}
                             </button>
                           );
                         })}
@@ -487,29 +785,29 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
           </div>
 
           {/* Bottom Scrolling Navigation Bar */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 bg-[#1a1a1a] p-3 rounded-xl border-2 border-black">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 bg-[#141414] p-3 rounded-xl border-2 border-black">
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={scrollLeft}
                 disabled={scrollOffset === 0}
-                className="w-10 h-8 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded-lg text-white flex items-center justify-center transition border border-neutral-700 active:scale-95 cursor-pointer"
+                className="w-11 h-9 bg-gradient-to-b from-pink-500 to-pink-700 hover:from-pink-400 hover:to-pink-600 border-2 border-black disabled:opacity-20 rounded-xl text-white font-black flex items-center justify-center transition active:scale-90 cursor-pointer shadow-[0_2px_4px_rgba(0,0,0,0.4)]"
                 title="Atrás 5 celdas"
               >
-                ◀
+                ◀◀
               </button>
 
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">CÁMARA:</span>
+                <span className="text-[10px] text-pink-400 font-mono font-black tracking-wide uppercase">CÁMARA:</span>
                 <input
                   type="range"
                   min={0}
                   max={maxColumnsCount - visibleColumnsCount}
                   value={scrollOffset}
                   onChange={e => setScrollOffset(parseInt(e.target.value))}
-                  className="w-36 sm:w-56 accent-yellow-400"
+                  className="w-36 sm:w-56 accent-pink-500 h-2 bg-black/80 rounded-lg appearance-none cursor-pointer border border-neutral-800"
                 />
-                <span className="text-xs font-mono font-bold text-yellow-400 bg-black/40 px-2 py-0.5 rounded border border-neutral-800">
+                <span className="text-xs font-mono font-black text-white bg-black/60 px-2.5 py-1 rounded-lg border border-neutral-800 shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)]">
                   X:{scrollOffset} - X:{scrollOffset + visibleColumnsCount}
                 </span>
               </div>
@@ -517,16 +815,20 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
               <button
                 onClick={scrollRight}
                 disabled={scrollOffset >= maxColumnsCount - visibleColumnsCount}
-                className="w-10 h-8 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded-lg text-white flex items-center justify-center transition border border-neutral-700 active:scale-95 cursor-pointer"
+                className="w-11 h-9 bg-gradient-to-b from-pink-500 to-pink-700 hover:from-pink-400 hover:to-pink-600 border-2 border-black disabled:opacity-20 rounded-xl text-white font-black flex items-center justify-center transition active:scale-90 cursor-pointer shadow-[0_2px_4px_rgba(0,0,0,0.4)]"
                 title="Adelante 5 celdas"
               >
-                ▶
+                ▶▶
               </button>
             </div>
 
-            <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 bg-black/30 p-1.5 rounded border border-neutral-800">
-              <HelpCircle className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
-              <span>Coloca portales (🄲=Cubo, ⚡=Wave, 🤖=Robot, ⚙️=Rueda) para forzar transformaciones.</span>
+            <div className="text-[10px] font-mono text-slate-300 flex items-center gap-1.5 bg-cyan-950/20 p-2 rounded-lg border border-cyan-900/30">
+              <Sparkles className="w-4 h-4 text-cyan-400 flex-shrink-0 animate-pulse" />
+              <span>
+                {swipeEnabled 
+                  ? '👉 MODO PINTAR ACTIVO: Arrastra sobre la cuadrícula para construir rápido.' 
+                  : '👉 MODO NAVEGAR ACTIVO: Desliza con un dedo o ratón sobre la cuadrícula para moverte.'}
+              </span>
             </div>
 
           </div>
@@ -601,11 +903,13 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
                     <button
                       key={tool.type}
                       onClick={() => setActiveBrush(tool.type)}
-                      className={`h-11 rounded-xl border-2 flex flex-col items-center justify-center relative transition duration-100 ${isSelected ? 'border-yellow-400 bg-yellow-950/20 text-yellow-300 scale-105' : 'border-neutral-900 bg-slate-900 hover:border-slate-600 text-slate-300'}`}
+                      className={`h-11 rounded-xl border-2 flex flex-col items-center justify-center p-0.5 relative transition duration-100 ${isSelected ? 'border-yellow-400 bg-yellow-950/20 text-yellow-300 scale-105' : 'border-neutral-900 bg-slate-900 hover:border-slate-600 text-slate-300'}`}
                       title={tool.name}
                     >
-                      <div className="text-sm font-black">{tool.symbol}</div>
-                      <span className="text-[7px] text-slate-400 font-bold tracking-tight absolute bottom-0.5 truncate max-w-[90%] block">
+                      <div className="w-5 h-5 flex items-center justify-center mb-2.5">
+                        {renderVisualElement(tool.type)}
+                      </div>
+                      <span className="text-[6.5px] text-slate-400 font-extrabold tracking-tight absolute bottom-0.5 truncate max-w-[95%] block uppercase">
                         {tool.name.split(' ')[0]}
                       </span>
                     </button>

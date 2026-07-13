@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Level, PlayerSkins } from './types';
 import {
   DEFAULT_LEVELS,
@@ -105,6 +106,10 @@ export default function App() {
   const [deleteConfirmLevelId, setDeleteConfirmLevelId] = useState<string | null>(null);
   const [publishLevelModal, setPublishLevelModal] = useState<Level | null>(null);
   const [publishAuthorName, setPublishAuthorName] = useState<string>('');
+
+  // Level selection carousel states
+  const [officialLevelIndex, setOfficialLevelIndex] = useState<number>(0);
+  const [levelSelectTab, setLevelSelectTab] = useState<'official' | 'custom'>('official');
 
   // Account system states
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -468,217 +473,536 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden flex items-center justify-center p-0 select-none">
-      
-      {/* 1. VIEW ROUTER: GAMEPLAY CANVAS ACTIVE */}
-      {view === 'playing' && selectedLevel && (
-        <div className="w-full h-full animate-fade-in flex flex-col">
-          <GameCanvas
-            level={selectedLevel}
-            skins={skins}
-            onExit={() => {
-              if (cameFromEditor) {
-                setViewState('editor');
-                setCameFromEditor(false);
-              } else {
-                setViewState(selectedLevel.id.startsWith('shared_') ? 'online_browser' : 'levels');
-              }
-            }}
-            onProgress={handleProgressUpdate}
-          />
-        </div>
-      )}
+      <AnimatePresence mode="wait">
+        
+        {/* 1. VIEW ROUTER: GAMEPLAY CANVAS ACTIVE */}
+        {view === 'playing' && selectedLevel && (
+          <motion.div
+            key="playing"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.04 }}
+            transition={{ duration: 0.28, ease: 'easeInOut' }}
+            className="w-full h-full flex flex-col"
+          >
+            <GameCanvas
+              level={selectedLevel}
+              skins={skins}
+              onExit={() => {
+                if (cameFromEditor) {
+                  setViewState('editor');
+                  setCameFromEditor(false);
+                } else {
+                  setViewState(selectedLevel.id.startsWith('shared_') ? 'online_browser' : 'levels');
+                }
+              }}
+              onProgress={handleProgressUpdate}
+            />
+          </motion.div>
+        )}
 
-      {/* 2. VIEW ROUTER: SKIN CUSTOMIZER ACTIVE */}
-      {view === 'customizer' && (
-        <div className="w-full h-full animate-fade-in">
-          <SkinCustomizer
-            skins={skins}
-            onSkinsChange={handleSkinsChange}
-            onClose={() => setViewState('menu')}
-            profile={profile}
-            onProfileChange={setProfile}
-          />
-        </div>
-      )}
+        {/* 2. VIEW ROUTER: SKIN CUSTOMIZER ACTIVE */}
+        {view === 'customizer' && (
+          <motion.div
+            key="customizer"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="w-full h-full"
+          >
+            <SkinCustomizer
+              skins={skins}
+              onSkinsChange={handleSkinsChange}
+              onClose={() => setViewState('menu')}
+              profile={profile}
+              onProfileChange={setProfile}
+            />
+          </motion.div>
+        )}
 
-      {/* 3. VIEW ROUTER: LEVEL BUILDER EDITOR ACTIVE */}
-      {view === 'editor' && (
-        <div className="w-full h-full animate-fade-in">
-          <LevelBuilder
-            initialLevel={selectedLevel}
-            onSaveAndClose={() => setViewState('menu')}
-            onPlaytest={(testLevel) => {
-              setSelectedLevel(testLevel);
-              setCameFromEditor(true);
-              setViewState('playing');
-            }}
-          />
-        </div>
-      )}
+        {/* 3. VIEW ROUTER: LEVEL BUILDER EDITOR ACTIVE */}
+        {view === 'editor' && (
+          <motion.div
+            key="editor"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="w-full h-full"
+          >
+            <LevelBuilder
+              initialLevel={selectedLevel}
+              onSaveAndClose={() => setViewState('menu')}
+              onPlaytest={(testLevel) => {
+                setSelectedLevel(testLevel);
+                setCameFromEditor(true);
+                setViewState('playing');
+              }}
+            />
+          </motion.div>
+        )}
 
-      {/* 4. VIEW ROUTER: ONLINE SHARING BROWSER PLATFORM */}
-      {view === 'online_browser' && (
-        <div className="w-full h-full animate-fade-in">
-          <OnlineLevelBrowser
-            skins={skins}
-            onPlayLevel={handleStartGame}
-            onClose={() => setViewState('menu')}
-            username={profile.username}
-          />
-        </div>
-      )}
+        {/* 4. VIEW ROUTER: ONLINE SHARING BROWSER PLATFORM */}
+        {view === 'online_browser' && (
+          <motion.div
+            key="online_browser"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="w-full h-full"
+          >
+            <OnlineLevelBrowser
+              skins={skins}
+              onPlayLevel={handleStartGame}
+              onClose={() => setViewState('menu')}
+              username={profile.username}
+            />
+          </motion.div>
+        )}
 
-      {/* 5. VIEW ROUTER: LEVEL SELECT LIST ACTIVE */}
-      {view === 'levels' && (
-        <div className="w-full h-full bg-slate-900 flex flex-col justify-between p-6 animate-fade-in">
-          <div>
-            <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <Compass className="w-6 h-6 text-emerald-400" />
-                <h2 className="text-xl font-bold uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300">Selecciona un Nivel</h2>
-              </div>
+        {/* 5. VIEW ROUTER: LEVEL SELECT CAROUSEL ACTIVE */}
+        {view === 'levels' && (
+          <motion.div
+            key="levels"
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.28, ease: 'easeInOut' }}
+            className={`w-full h-full relative flex flex-col justify-between select-none overflow-hidden ${levelSelectTab === 'official' ? 'bg-[#0024f0]' : 'bg-slate-900'} p-4 sm:p-6 pb-2 sm:pb-4`}
+          >
+          
+          {/* Info Modal Dialog */}
+          {levelSelectTab === 'official' && (
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-cyan-400 via-green-400 to-cyan-500 z-30 opacity-80" />
+          )}
+
+          {/* Top Header / Navigation row */}
+          <div className="z-20 flex items-center justify-between w-full relative">
+            {/* Back Button (Classic GD styled) */}
+            <button
+              onClick={() => setViewState('menu')}
+              className="w-10 h-10 sm:w-12 sm:h-12 bg-green-500 hover:bg-green-400 border-[3px] border-black rounded-full flex items-center justify-center cursor-pointer shadow-[0_4px_0_#000] hover:scale-110 active:scale-95 active:translate-y-0.5 transition-all text-white font-black"
+              title="Volver al Menú Principal"
+            >
+              <span className="text-xl sm:text-2xl -translate-x-0.5">◀</span>
+            </button>
+
+            {/* Tab Swapper to let users access both Official Levels & custom creations */}
+            <div className="flex gap-2 bg-black/45 p-1 rounded-2xl border border-white/10 shadow-inner">
               <button
-                onClick={() => setViewState('menu')}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                onClick={() => setLevelSelectTab('official')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold uppercase tracking-widest transition cursor-pointer ${levelSelectTab === 'official' ? 'bg-gradient-to-b from-yellow-300 to-yellow-500 text-black border-2 border-black shadow-[0_2px_0_#000]' : 'text-slate-300 hover:text-white border-2 border-transparent'}`}
+                style={{
+                  textShadow: levelSelectTab === 'official' ? 'none' : '1px 1px 0px #000'
+                }}
               >
-                <ArrowLeft className="w-4 h-4" /> VOLVER
+                Oficiales
+              </button>
+              <button
+                onClick={() => setLevelSelectTab('custom')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold uppercase tracking-widest transition cursor-pointer ${levelSelectTab === 'custom' ? 'bg-gradient-to-b from-yellow-300 to-yellow-500 text-black border-2 border-black shadow-[0_2px_0_#000]' : 'text-slate-300 hover:text-white border-2 border-transparent'}`}
+                style={{
+                  textShadow: levelSelectTab === 'custom' ? 'none' : '1px 1px 0px #000'
+                }}
+              >
+                Creados ({customLevels.length})
               </button>
             </div>
 
-            {/* LEVELS CONTAINER SCROLLABLE LIST */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[75vh] overflow-y-auto pr-2 scrollbar-thin">
-              {/* Preset Default Levels */}
-              {DEFAULT_LEVELS.map(level => {
-                const progress = getLevelProgress(level.id);
-                let stars = '★';
-                let diffLabel = 'Fácil';
-                let diffColor = 'text-green-400';
+            {/* Info Button (Classic GD Cyan circle with "i") */}
+            {levelSelectTab === 'official' ? (
+              <button
+                onClick={() => alert(`ℹ️ GUÍA DE JUEGO ℹ️\n\n• Controles: Presiona ESPACIO, Flecha Arriba o Haz Clic para Saltar.\n• Portales de Vehículo:\n   - Verde: Cubo Clásico\n   - Azul: Wave (Vuelo en zigzag)\n   - Rosa/Naranja: Robot (Mantén presionado para saltar más alto)\n   - Morado: Rueda (Cambia la gravedad con cada clic)\n\n¡Consigue el 100% en todos los niveles para demostrar tu destreza!`)}
+                className="w-10 h-10 sm:w-12 sm:h-12 bg-cyan-400 hover:bg-cyan-300 border-[3px] border-black rounded-full flex items-center justify-center cursor-pointer shadow-[0_4px_0_#000] hover:scale-110 active:scale-95 active:translate-y-0.5 transition-all text-white font-serif font-black text-lg sm:text-xl"
+                title="Información de Niveles"
+              >
+                i
+              </button>
+            ) : (
+              <div className="w-10 sm:w-12" /> // spacer to keep balance
+            )}
+          </div>
+
+          {/* MAIN TAB SWITCH VIEWPORT */}
+          {levelSelectTab === 'official' ? (
+            /* OFFICIAL GD CAROUSEL VIEWPORT */
+            <div className="flex-1 flex flex-col justify-center items-center my-auto relative z-10 w-full px-12 max-w-[700px] mx-auto">
+              
+              {/* Previous Level Trigger Arrow (Left side of screen) */}
+              <button
+                onClick={() => {
+                  setOfficialLevelIndex((prev) => (prev - 1 + DEFAULT_LEVELS.length) % DEFAULT_LEVELS.length);
+                }}
+                className="absolute left-0 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-14 sm:h-14 flex items-center justify-center text-white hover:scale-125 transition-transform duration-150 cursor-pointer text-4xl sm:text-5xl font-black filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] select-none text-shadow-gd active:scale-90"
+                style={{
+                  textShadow: '4px 4px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000, 2px 2px 0px #000'
+                }}
+              >
+                ◀
+              </button>
+
+              {/* Next Level Trigger Arrow (Right side of screen) */}
+              <button
+                onClick={() => {
+                  setOfficialLevelIndex((prev) => (prev + 1) % DEFAULT_LEVELS.length);
+                }}
+                className="absolute right-0 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-14 sm:h-14 flex items-center justify-center text-white hover:scale-125 transition-transform duration-150 cursor-pointer text-4xl sm:text-5xl font-black filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] select-none text-shadow-gd active:scale-90"
+                style={{
+                  textShadow: '4px 4px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000, 2px 2px 0px #000'
+                }}
+              >
+                ▶
+              </button>
+
+              {(() => {
+                const currentLevel = DEFAULT_LEVELS[officialLevelIndex];
+                if (!currentLevel) return null;
+                const progress = getLevelProgress(currentLevel.id);
                 
-                if (level.difficulty === 'normal') {
-                  stars = '★★★';
-                  diffLabel = 'Normal';
-                  diffColor = 'text-cyan-400';
-                } else if (level.difficulty === 'hard') {
-                  stars = '★★★★★';
-                  diffLabel = 'Difícil';
-                  diffColor = 'text-yellow-400';
-                }
+                // Fetch difficulty color mapping
+                let starReward = currentLevel.starsReward || (currentLevel.difficulty === 'easy' ? 1 : currentLevel.difficulty === 'normal' ? 3 : 5);
 
                 return (
-                  <div
-                    key={level.id}
-                    onClick={() => handleStartGame(level)}
-                    className="p-4 rounded-2xl border border-slate-800 bg-slate-950/60 hover:bg-slate-950 hover:border-emerald-500/50 transition cursor-pointer flex justify-between items-center group relative overflow-hidden"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-base font-black text-white group-hover:text-emerald-400 truncate tracking-wide uppercase">
-                        {level.name}
+                  <div className="w-full flex flex-col items-center animate-fade-in mt-1 landscape:mt-0">
+                    
+                    {/* CENTERED LEVEL CARD */}
+                    <div
+                      onClick={() => handleStartGame(currentLevel)}
+                      className="w-full max-w-[460px] bg-[#001047] border-[4px] border-[#000520] rounded-[24px] p-5 sm:p-6 shadow-[0_12px_24px_rgba(0,0,0,0.6)] hover:scale-103 hover:border-cyan-400 active:scale-97 transition-all duration-200 cursor-pointer relative select-none flex flex-col justify-between min-h-[140px] sm:min-h-[170px]"
+                    >
+                      {/* Star points reward at top-right of card */}
+                      <div className="absolute top-3.5 right-4 flex items-center gap-1 font-mono font-black text-yellow-400 text-sm sm:text-base tracking-wider filter drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.9)]">
+                        <span>{starReward}</span>
+                        <span className="text-yellow-400 text-base sm:text-lg">⭐</span>
                       </div>
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className={`text-xs font-mono font-bold ${diffColor}`}>
-                          {diffLabel}
-                        </span>
-                        <span className="text-[10px] text-yellow-500 font-mono tracking-widest">{stars}</span>
-                        {progress.normalProgress > 0 && (
-                          <span className="text-[10px] font-mono text-slate-400 font-bold">
-                            Mejor: <span className="text-emerald-400">{progress.normalProgress}%</span>
-                          </span>
-                        )}
+
+                      {/* Middle row: Difficulty face & Level Name */}
+                      <div className="flex items-center gap-3.5 sm:gap-5 mt-3 sm:mt-4">
+                        {/* Difficulty Face SVG */}
+                        <div className="flex-shrink-0">
+                          {(() => {
+                            switch (currentLevel.difficulty) {
+                              case 'easy':
+                                return (
+                                  <svg viewBox="0 0 100 100" className="w-14 h-14 sm:w-18 sm:h-18 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.4)]">
+                                    <circle cx="50" cy="50" r="45" fill="#00c8ff" stroke="#000" strokeWidth="5" />
+                                    <ellipse cx="32" cy="40" rx="6.5" ry="8.5" fill="#000" />
+                                    <ellipse cx="68" cy="40" rx="6.5" ry="8.5" fill="#000" />
+                                    <circle cx="32" cy="38" r="2.5" fill="#fff" />
+                                    <circle cx="68" cy="38" r="2.5" fill="#fff" />
+                                    <path d="M 22 55 Q 50 85 78 55 Z" fill="#000" stroke="#000" strokeWidth="3" />
+                                    <rect x="29" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <rect x="37" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <rect x="45" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <rect x="53" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <rect x="61" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <rect x="69" y="55" width="6" height="4.5" fill="#fff" rx="1.5" />
+                                    <circle cx="18" cy="48" r="4" fill="#ff4d4d" opacity="0.6" />
+                                    <circle cx="82" cy="48" r="4" fill="#ff4d4d" opacity="0.6" />
+                                  </svg>
+                                );
+                              case 'normal':
+                                return (
+                                  <svg viewBox="0 0 100 100" className="w-14 h-14 sm:w-18 sm:h-18 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.4)]">
+                                    <circle cx="50" cy="50" r="45" fill="#4ade80" stroke="#000" strokeWidth="5" />
+                                    <ellipse cx="32" cy="42" rx="6.5" ry="8.5" fill="#000" />
+                                    <ellipse cx="68" cy="42" rx="6.5" ry="8.5" fill="#000" />
+                                    <circle cx="32" cy="39" r="2.5" fill="#fff" />
+                                    <circle cx="68" cy="39" r="2.5" fill="#fff" />
+                                    <path d="M 26 56 Q 50 78 74 56" fill="none" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+                                  </svg>
+                                );
+                              case 'hard':
+                                return (
+                                  <svg viewBox="0 0 100 100" className="w-14 h-14 sm:w-18 sm:h-18 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.4)]">
+                                    <circle cx="50" cy="50" r="45" fill="#fbbf24" stroke="#000" strokeWidth="5" />
+                                    <path d="M 18 32 L 44 41" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+                                    <path d="M 82 32 L 56 41" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+                                    <circle cx="30" cy="47" r="6" fill="#000" />
+                                    <circle cx="70" cy="47" r="6" fill="#000" />
+                                    <circle cx="30" cy="45" r="1.5" fill="#fff" />
+                                    <circle cx="70" cy="45" r="1.5" fill="#fff" />
+                                    <path d="M 32 68 Q 50 60 68 68" fill="none" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+                                  </svg>
+                                );
+                              case 'harder':
+                              default:
+                                return (
+                                  <svg viewBox="0 0 100 100" className="w-14 h-14 sm:w-18 sm:h-18 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.4)]">
+                                    <circle cx="50" cy="50" r="45" fill="#f97316" stroke="#000" strokeWidth="5" />
+                                    <path d="M 16 30 L 44 42" stroke="#000" strokeWidth="7" strokeLinecap="round" />
+                                    <path d="M 84 30 L 56 42" stroke="#000" strokeWidth="7" strokeLinecap="round" />
+                                    <ellipse cx="28" cy="49" rx="6.5" ry="7.5" fill="#000" />
+                                    <ellipse cx="72" cy="49" rx="6.5" ry="7.5" fill="#000" />
+                                    <circle cx="28" cy="47" r="1.5" fill="#fff" />
+                                    <circle cx="72" cy="47" r="1.5" fill="#fff" />
+                                    <path d="M 30 70 Q 50 56 70 70" fill="none" stroke="#000" strokeWidth="6" strokeLinecap="round" />
+                                  </svg>
+                                );
+                            }
+                          })()}
+                        </div>
+
+                        {/* Title text with classic thick stroke GD styled shadow */}
+                        <div className="flex-1 min-w-0 pr-8">
+                          <h3
+                            className="font-black uppercase tracking-wider text-white text-2xl sm:text-3xl tracking-wide select-none truncate text-left filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.7)]"
+                            style={{
+                              fontFamily: '"Space Grotesk", sans-serif',
+                              textShadow: '3px 3px 0px #000, -1.5px -1.5px 0px #000, 1.5px -1.5px 0px #000, -1.5px 1.5px 0px #000, 1.5px 1.5px 0px #000'
+                            }}
+                          >
+                            {currentLevel.name}
+                          </h3>
+                        </div>
+                      </div>
+
+                      {/* Stars/Coins Row (Bottom Right) */}
+                      <div className="mt-4 sm:mt-5 flex justify-end items-center gap-1.5">
+                        {/* 3 Gold Secret Coins */}
+                        {[1, 2, 3].map(coin => (
+                          <div
+                            key={coin}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 border-black flex items-center justify-center shadow-[0_2px_4px_rgba(0,0,0,0.5)] transition-all ${progress.normalProgress === 100 ? 'bg-gradient-to-b from-yellow-300 to-amber-500 scale-105 rotate-12' : 'bg-amber-600/30 brightness-50'}`}
+                            title={progress.normalProgress === 100 ? "Moneda secreta conseguida" : "Completa el nivel al 100% para reclamar monedas"}
+                          >
+                            {/* Inner gold star shape icon */}
+                            <svg className={`w-3.5 h-3.5 ${progress.normalProgress === 100 ? 'text-white' : 'text-amber-500'}`} fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                            </svg>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    
-                    <button className="p-3 rounded-xl bg-slate-800 group-hover:bg-emerald-500 text-slate-400 group-hover:text-white transition shadow-md flex-shrink-0">
-                      <PlayIcon className="w-4 h-4 fill-current" />
-                    </button>
+
+                    {/* DUAL PROGRESS BARS SUB-PANEL */}
+                    <div className="w-full max-w-[460px] flex flex-col gap-2 mt-4 sm:mt-5">
+                      
+                      {/* NORMAL MODE PROGRESS */}
+                      <div className="flex flex-col items-center">
+                        <div
+                          className="font-extrabold uppercase text-white text-xs sm:text-sm tracking-widest mb-1 filter drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.9)]"
+                          style={{ textShadow: '1.5px 1.5px 0px #000' }}
+                        >
+                          NORMAL MODE
+                        </div>
+                        <div className="w-full h-7 sm:h-8 bg-slate-950/80 border-[3.5px] border-black rounded-full overflow-hidden relative flex items-center justify-center shadow-[0_3px_5px_rgba(0,0,0,0.4)]">
+                          <div
+                            className="absolute left-0 top-0 bottom-0 bg-[#00ff00] border-r-[2.5px] border-black transition-all duration-1000 ease-out"
+                            style={{ width: `${progress.normalProgress || 0}%` }}
+                          />
+                          <span
+                            className="z-10 font-black text-xs sm:text-sm text-white tracking-widest text-shadow-gd"
+                            style={{ textShadow: '1.5px 1.5px 0px #000' }}
+                          >
+                            {progress.normalProgress || 0}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* PRACTICE MODE PROGRESS */}
+                      <div className="flex flex-col items-center mt-1">
+                        <div
+                          className="font-extrabold uppercase text-white text-xs sm:text-sm tracking-widest mb-1 filter drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.9)]"
+                          style={{ textShadow: '1.5px 1.5px 0px #000' }}
+                        >
+                          PRACTICE MODE
+                        </div>
+                        <div className="w-full h-7 sm:h-8 bg-slate-950/80 border-[3.5px] border-black rounded-full overflow-hidden relative flex items-center justify-center shadow-[0_3px_5px_rgba(0,0,0,0.4)]">
+                          <div
+                            className="absolute left-0 top-0 bottom-0 bg-[#00ffff] border-r-[2.5px] border-black transition-all duration-1000 ease-out"
+                            style={{ width: `${progress.practiceProgress || 0}%` }}
+                          />
+                          <span
+                            className="z-10 font-black text-xs sm:text-sm text-white tracking-widest text-shadow-gd"
+                            style={{ textShadow: '1.5px 1.5px 0px #000' }}
+                          >
+                            {progress.practiceProgress || 0}%
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
                 );
-              })}
+              })()}
 
-              {/* Custom Created Levels list */}
-              {customLevels.length > 0 ? (
-                customLevels.map(level => {
-                  const progress = getLevelProgress(level.id);
-                  return (
-                    <div
-                      key={level.id}
-                      className="p-4 rounded-2xl border border-yellow-900/30 bg-amber-950/10 hover:border-yellow-500/40 transition cursor-pointer flex justify-between items-center group"
-                      onClick={() => handleStartGame(level)}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-base font-black text-yellow-300 truncate tracking-wide flex items-center gap-1.5 uppercase">
-                          <Wrench className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                          {level.name}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1.5">
-                          <span className="text-xs font-mono font-bold text-slate-400 uppercase">
-                            Personalizado
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono">({level.elements.length} obj)</span>
-                          {progress.normalProgress > 0 && (
-                            <span className="text-[10px] font-mono text-slate-400 font-bold">
-                              Mejor: <span className="text-yellow-400">{progress.normalProgress}%</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
+              {/* DOWNLOAD THE SOUNDTRACKS BUTTON */}
+              <div className="w-full max-w-[460px] mt-4 sm:mt-5 z-20">
+                <button
+                  onClick={() => alert("🎵 DESCARGAR SOUNDTRACKS 🎵\n\nLas canciones originales de Geometry Dash están disponibles gratis en Newgrounds.\n\n¡Disfruta del juego y crea tus propios mapas con pistas editables!")}
+                  className="w-full py-2 bg-[#2d3a60]/85 hover:bg-[#3d4b7c] border-[3px] border-black rounded-xl text-center text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-cyan-300 hover:text-white transition cursor-pointer shadow-[0_3.5px_0_#000] active:translate-y-0.5 active:shadow-[0_1px_0_#000] text-shadow-gd"
+                  style={{ textShadow: '1.5px 1.5px 0px #000' }}
+                >
+                  DOWNLOAD THE SOUNDTRACKS
+                </button>
+              </div>
 
-                      <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        {/* Share / Upload to cloud button */}
-                        <button
-                          onClick={(e) => handleUploadLevel(level, e)}
-                          className="p-2.5 rounded-xl bg-slate-800 hover:bg-cyan-500 text-slate-400 hover:text-black transition"
-                          title="Subir a Niveles Online (Compartir)"
-                        >
-                          <CloudUpload className="w-4 h-4" />
-                        </button>
-                        
-                        {/* Edit level */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditor(level);
-                          }}
-                          className="p-2.5 rounded-xl bg-slate-800 hover:bg-yellow-500 text-slate-400 hover:text-slate-950 transition"
-                          title="Editar en el Creador"
-                        >
-                          <Wrench className="w-4 h-4" />
-                        </button>
-
-                        {/* Delete level */}
-                        <button
-                          onClick={(e) => handleDeleteLevel(level.id, e)}
-                          className="p-2.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition"
-                          title="Eliminar nivel"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="col-span-1 md:col-span-2 p-8 rounded-2xl border border-dashed border-slate-800 text-center text-slate-500 font-mono text-xs flex flex-col items-center justify-center gap-3 bg-slate-950/20">
-                  No tienes niveles creados aún en local. ¡Usa el constructor para dar rienda suelta a tu imaginación!
-                  <button
-                    onClick={() => handleOpenEditor(null)}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold rounded-xl text-xs tracking-wider uppercase transition border border-slate-700"
-                  >
-                    <Plus className="w-4 h-4" /> CREAR PRIMER NIVEL
-                  </button>
-                </div>
-              )}
             </div>
+          ) : (
+            /* CUSTOM CREATED LEVELS LIST VIEWPORT */
+            <div className="flex-1 flex flex-col justify-start w-full max-w-4xl mx-auto px-4 py-3 z-10 overflow-hidden">
+              <div className="mb-4 pb-2 border-b border-slate-800 flex justify-between items-center">
+                <div>
+                  <h3 className="text-sm font-bold uppercase text-yellow-500 tracking-wider font-mono">Taller de Diseño</h3>
+                  <p className="text-[10px] text-slate-500 font-mono">Edita tus propios mapas o expórtalos a los servidores</p>
+                </div>
+                <button
+                  onClick={() => handleOpenEditor(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-b from-yellow-400 to-amber-500 border-2 border-black rounded-xl text-[10px] font-black text-black uppercase transition shadow-[0_2px_0_#000] hover:scale-105"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Nuevo Proyecto
+                </button>
+              </div>
+
+              {/* SCROLLABLE LIST OF USER CREATED MAPS */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3 max-h-[58vh] scrollbar-thin">
+                {customLevels.length > 0 ? (
+                  customLevels.map(level => {
+                    const progress = getLevelProgress(level.id);
+                    return (
+                      <div
+                        key={level.id}
+                        className="p-3.5 rounded-2xl border border-yellow-900/30 bg-amber-950/10 hover:border-yellow-500/40 transition cursor-pointer flex justify-between items-center group shadow"
+                        onClick={() => handleStartGame(level)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-extrabold text-yellow-300 truncate tracking-wide flex items-center gap-1.5 uppercase">
+                            <Wrench className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                            {level.name}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                              Personalizado
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-mono">({level.elements.length} obj)</span>
+                            {progress.normalProgress > 0 && (
+                              <span className="text-[9px] font-mono text-slate-400 font-bold">
+                                Mejor: <span className="text-yellow-400">{progress.normalProgress}%</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          {/* Share / Upload to cloud */}
+                          <button
+                            onClick={(e) => handleUploadLevel(level, e)}
+                            className="p-2 bg-slate-800 hover:bg-cyan-500 text-slate-400 hover:text-black rounded-xl transition"
+                            title="Publicar en Servidores Online"
+                          >
+                            <CloudUpload className="w-3.5 h-3.5" />
+                          </button>
+                          
+                          {/* Edit level in builder */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditor(level);
+                            }}
+                            className="p-2 bg-slate-800 hover:bg-yellow-500 text-slate-400 hover:text-slate-950 rounded-xl transition"
+                            title="Editar mapa"
+                          >
+                            <Wrench className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete level */}
+                          <button
+                            onClick={(e) => handleDeleteLevel(level.id, e)}
+                            className="p-2 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-xl transition"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 rounded-2xl border border-dashed border-slate-800 text-center text-slate-500 font-mono text-xs flex flex-col items-center justify-center gap-3 bg-slate-950/20">
+                    No tienes mapas creados en local todavía. ¡Usa el taller para inventar tus propios desafíos!
+                    <button
+                      onClick={() => handleOpenEditor(null)}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold rounded-xl text-xs tracking-wider uppercase transition border border-slate-700"
+                    >
+                      <Plus className="w-4 h-4" /> Empezar a Construir
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* DOTS PAGINATION & DECORATIVE PILLARS BOTTOM ROW */}
+          <div className="relative w-full flex flex-col items-center justify-center z-10 pt-1 mt-auto select-none pointer-events-none">
+            {/* Dots Indicator for official carousel */}
+            {levelSelectTab === 'official' && (
+              <div className="flex gap-2.5 justify-center items-center py-2 bg-black/25 px-5 rounded-full border border-white/5 pointer-events-auto">
+                {DEFAULT_LEVELS.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setOfficialLevelIndex(idx)}
+                    className={`w-2.5 h-2.5 rounded-full border border-black/60 transition-all cursor-pointer ${idx === officialLevelIndex ? 'bg-white scale-125 shadow-md shadow-white/40' : 'bg-white/40 hover:bg-white/70'}`}
+                    title={`Ver nivel ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Left Corner Steps (Teal / Green staircases) */}
+            {levelSelectTab === 'official' && (
+              <div className="absolute bottom-0 left-0 flex flex-col items-start pointer-events-none z-10 scale-90 origin-bottom-left">
+                {/* Step 3 */}
+                <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-r-2 border-white"></div>
+                {/* Step 2 */}
+                <div className="flex">
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-r-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-r-2 border-white"></div>
+                </div>
+                {/* Step 1 */}
+                <div className="flex">
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-r-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-r-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-r-2 border-white"></div>
+                </div>
+              </div>
+            )}
+
+            {/* Right Corner Steps (Teal / Green staircases mirroring Left) */}
+            {levelSelectTab === 'official' && (
+              <div className="absolute bottom-0 right-0 flex flex-col items-end pointer-events-none z-10 scale-90 origin-bottom-right">
+                {/* Step 3 */}
+                <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-l-2 border-white"></div>
+                {/* Step 2 */}
+                <div className="flex">
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-l-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-l-2 border-white"></div>
+                </div>
+                {/* Step 1 */}
+                <div className="flex">
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#49e35b] to-[#12a123] border-t-2 border-l-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-l-2 border-white"></div>
+                  <div className="w-7 h-5 bg-gradient-to-b from-[#12a123] to-[#04610f] border-l-2 border-white"></div>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="text-center text-[10px] text-slate-500 font-mono mt-3">
-            Haz clic en Jugar. Los portales te cambiarán de vehículo (Cubo, Wave, Robot, Rueda) automáticamente.
-          </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* 5. VIEW ROUTER: CLASSIC HOMEPAGE MENU ACTIVE */}
-      {view === 'menu' && (
-        <div className="w-full h-full bg-purple-950 relative flex flex-col justify-between p-8 select-none">
+        {/* 5. VIEW ROUTER: CLASSIC HOMEPAGE MENU ACTIVE */}
+        {view === 'menu' && (
+          <motion.div
+            key="menu"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="w-full h-full bg-purple-950 relative flex flex-col justify-between p-8 select-none"
+          >
           
           {/* Animated Mountains Background */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-[#7c2d12]/10 via-[#6d28d9] to-[#3b0764]">
@@ -852,8 +1176,9 @@ export default function App() {
             </button>
           </div>
 
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* DAILY CHEST MODAL DIALOG POPUP */}
       {showChestModal && (
