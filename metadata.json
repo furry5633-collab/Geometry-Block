@@ -1,0 +1,6 @@
+{
+  "name": "Geometry Dash",
+  "description": "Geometry Dash con personalizador de skins, creador de niveles, plataforma online para compartir niveles, regalos diarios con cooldown y sistema de guardado persistente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
