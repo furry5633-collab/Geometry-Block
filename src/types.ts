@@ -51,6 +51,7 @@ export interface Level {
   elements: LevelElement[];
   isCustom?: boolean;
   musicTrack?: string;
+  theme?: string;
   author?: string;
   downloads?: number;
   likes?: number;
@@ -77,4 +78,12 @@ export interface SkinOption {
   id: string;
   name: string;
   svgPath: string; // Draw inside custom viewport
+}
+
+export interface UserProfile {
+  username: string;
+  stars: number;
+  orbs: number;
+  diamonds: number;
+  completedCount: number;
 }

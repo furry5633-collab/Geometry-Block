@@ -224,10 +224,20 @@ export const renderVisualElement = (type: ElementType) => {
   }
 };
 
+const LEVEL_THEMES = [
+  { id: 'purple', name: 'Púrpura Cósmico', emoji: '🔮', bg: 'bg-[#6D28D9]', mountain: '#5B21B6', skyGlow: '#4C1D95', neon: '#10B981', gridBg: 'bg-purple-950/40', border: 'border-emerald-400', borderGlow: 'shadow-[0_0_15px_rgba(16,185,129,0.3)]' },
+  { id: 'cyber', name: 'Cyberpunk Neon', emoji: '🌌', bg: 'bg-[#090D1A]', mountain: '#131930', skyGlow: '#1F2A4C', neon: '#FF007F', gridBg: 'bg-indigo-950/40', border: 'border-pink-500', borderGlow: 'shadow-[0_0_15px_rgba(236,72,153,0.3)]' },
+  { id: 'toxic', name: 'Ácido Radiactivo', emoji: '☣️', bg: 'bg-[#022C22]', mountain: '#064E3B', skyGlow: '#0F766E', neon: '#A3E635', gridBg: 'bg-emerald-950/40', border: 'border-lime-400', borderGlow: 'shadow-[0_0_15px_rgba(163,230,53,0.3)]' },
+  { id: 'lava', name: 'Fuego Volcánico', emoji: '🔥', bg: 'bg-[#2D0606]', mountain: '#450A0A', skyGlow: '#7F1D1D', neon: '#EA580C', gridBg: 'bg-red-950/40', border: 'border-orange-500', borderGlow: 'shadow-[0_0_15px_rgba(234,88,12,0.3)]' },
+  { id: 'slate', name: 'Pizarra Brutal', emoji: '🩶', bg: 'bg-[#0F172A]', mountain: '#1E293B', skyGlow: '#334155', neon: '#38BDF8', gridBg: 'bg-slate-900/40', border: 'border-sky-400', borderGlow: 'shadow-[0_0_15px_rgba(56,189,248,0.3)]' },
+  { id: 'sunset', name: 'Atardecer Oro', emoji: '🌅', bg: 'bg-[#451A03]', mountain: '#78350F', skyGlow: '#92400E', neon: '#F59E0B', gridBg: 'bg-amber-950/40', border: 'border-yellow-400', borderGlow: 'shadow-[0_0_15px_rgba(245,158,11,0.3)]' },
+];
+
 export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest }: LevelBuilderProps) {
   const [levelName, setLevelName] = useState(initialLevel?.name || 'Mi Nivel Personalizado');
   const [difficulty, setDifficulty] = useState<Difficulty>(initialLevel?.difficulty || 'easy');
   const [musicTrack, setMusicTrack] = useState<string>(initialLevel?.musicTrack || 'track_stereo');
+  const [levelTheme, setLevelTheme] = useState<string>(initialLevel?.theme || 'purple');
   const [elements, setElements] = useState<LevelElement[]>(initialLevel?.elements || []);
   
   // Editor mode: 'build' | 'edit' | 'delete'
@@ -249,29 +259,36 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
   // Drag-to-paint state
   const [isMouseDown, setIsMouseDown] = useState(false);
 
-  // Scrolling view state
+  // Drag-to-scroll camera offset
   const [scrollOffset, setScrollOffset] = useState(0); 
-  const visibleColumnsCount = 20; 
+
+  // Dynamic zoom: small (24 columns), medium (20 columns), large (16 columns)
+  const [zoomLevel, setZoomLevel] = useState<'small' | 'medium' | 'large'>('medium');
+  const visibleColumnsCount = zoomLevel === 'small' ? 24 : zoomLevel === 'medium' ? 20 : 16;
+  
   const maxColumnsCount = 140; 
   const verticalRowsCount = 8; 
 
-  const [infoMessage, setInfoMessage] = useState('');
+  // Touch & Swipe Mode
+  const [swipeEnabled, setSwipeEnabled] = useState(false);
 
-  // Clear info logs
+  // Notifications
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Dragging scroll anchor refs
+  const dragStartRef = useRef<{ x: number; scrollOffset: number; hasMoved: boolean }>({ x: 0, scrollOffset: 0, hasMoved: false });
+
+  const activeTheme = LEVEL_THEMES.find(t => t.id === levelTheme) || LEVEL_THEMES[0];
+
   useEffect(() => {
     if (infoMessage) {
-      const t = setTimeout(() => setInfoMessage(''), 3000);
+      const t = setTimeout(() => setInfoMessage(null), 2500);
       return () => clearTimeout(t);
     }
   }, [infoMessage]);
 
-  // Initial history push
-  useEffect(() => {
-    setHistory([initialLevel?.elements || []]);
-    setHistoryIndex(0);
-  }, []);
-
-  // Update elements with history support
+  // Record history for undo/redo
   const updateElementsWithHistory = (newElements: LevelElement[]) => {
     const nextHistory = history.slice(0, historyIndex + 1);
     setHistory([...nextHistory, newElements]);
@@ -281,45 +298,52 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
 
   const handleUndo = () => {
     if (historyIndex > 0) {
-      const prevIdx = historyIndex - 1;
-      setHistoryIndex(prevIdx);
-      setElements(history[prevIdx]);
-      setInfoMessage('Deshecho');
+      setHistoryIndex(historyIndex - 1);
+      setElements(history[historyIndex - 1]);
+      setSelectedEditCoord(null);
+    } else if (historyIndex === 0) {
+      setHistoryIndex(-1);
+      setElements(initialLevel?.elements || []);
+      setSelectedEditCoord(null);
     }
   };
 
   const handleRedo = () => {
     if (historyIndex < history.length - 1) {
-      const nextIdx = historyIndex + 1;
-      setHistoryIndex(nextIdx);
-      setElements(history[nextIdx]);
-      setInfoMessage('Rehecho');
+      setHistoryIndex(historyIndex + 1);
+      setElements(history[historyIndex + 1]);
+      setSelectedEditCoord(null);
     }
   };
 
-  // Cell Interaction (handles single clicks & dragging)
-  const handleCellAction = (x: number, y: number) => {
-    if (editorMode === 'build') {
-      // Avoid placing duplicate of the exact same type at this coordinate
-      const existing = elements.find(el => el.x === x && el.y === y);
-      if (existing && existing.type === activeBrush) return;
+  // Grid interaction: add / edit / remove elements
+  const toggleElementAt = (x: number, y: number) => {
+    const existingIndex = elements.findIndex(el => el.x === x && el.y === y);
 
-      const filtered = elements.filter(el => !(el.x === x && el.y === y));
-      const newElement: LevelElement = {
-        id: `custom_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    if (editorMode === 'build') {
+      const newEl: LevelElement = {
+        id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         x,
         y,
         type: activeBrush
       };
-      updateElementsWithHistory([...filtered, newElement]);
+
+      if (existingIndex !== -1) {
+        // Replace element at same spot
+        const updated = [...elements];
+        updated[existingIndex] = newEl;
+        updateElementsWithHistory(updated);
+      } else {
+        // Append new element
+        updateElementsWithHistory([...elements, newEl]);
+      }
     } else if (editorMode === 'delete') {
-      const filtered = elements.filter(el => !(el.x === x && el.y === y));
-      if (filtered.length !== elements.length) {
-        updateElementsWithHistory(filtered);
+      if (existingIndex !== -1) {
+        const updated = elements.filter((_, idx) => idx !== existingIndex);
+        updateElementsWithHistory(updated);
       }
     } else if (editorMode === 'edit') {
-      const existing = elements.find(el => el.x === x && el.y === y);
-      if (existing) {
+      if (existingIndex !== -1) {
         setSelectedEditCoord({ x, y });
       } else {
         setSelectedEditCoord(null);
@@ -327,74 +351,75 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
     }
   };
 
-  // Swipe mode (painting elements consecutively vs sliding to scroll)
-  const [swipeEnabled, setSwipeEnabled] = useState(false);
-
-  // Drag-to-scroll and swipe drag refs
-  const dragStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    scrollOffset: number;
-    hasMoved: boolean;
-    cellX: number;
-    cellY: number;
-  } | null>(null);
-
-  const handleCellMouseDown = (x: number, y: number, event: React.MouseEvent) => {
-    if (event.button !== 0) return; // Only left click
-    if (swipeEnabled) {
-      setIsMouseDown(true);
-      handleCellAction(x, y);
-    } else {
-      dragStartRef.current = {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        scrollOffset: scrollOffset,
-        hasMoved: false,
-        cellX: x,
-        cellY: y,
-      };
-    }
+  // Mouse & Touch Drag paint events
+  const handleCellMouseDown = (x: number, y: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (e.button !== 0) return; // Only left-click
+    setIsMouseDown(true);
+    toggleElementAt(x, y);
   };
 
   const handleCellMouseEnter = (x: number, y: number) => {
-    if (swipeEnabled && isMouseDown) {
-      handleCellAction(x, y);
+    if (isMouseDown && swipeEnabled && (editorMode === 'build' || editorMode === 'delete')) {
+      toggleElementAt(x, y);
     }
   };
 
-  const handleCellTouchStart = (x: number, y: number, event: React.TouchEvent) => {
-    if (swipeEnabled) {
-      setIsMouseDown(true);
-      handleCellAction(x, y);
-    } else {
-      if (event.touches.length === 0) return;
-      const touch = event.touches[0];
+  const handleCellTouchStart = (x: number, y: number, e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsMouseDown(true);
+    toggleElementAt(x, y);
+  };
+
+  // Grid area background navigation (drag to scroll)
+  const handleGridMouseDown = (e: React.MouseEvent) => {
+    if (swipeEnabled) return; // Let swipe draw instead of scroll
+    setIsMouseDown(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      scrollOffset,
+      hasMoved: false
+    };
+  };
+
+  const handleGridTouchStart = (e: React.TouchEvent) => {
+    if (swipeEnabled) return;
+    setIsMouseDown(true);
+    if (e.touches[0]) {
       dragStartRef.current = {
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        scrollOffset: scrollOffset,
-        hasMoved: false,
-        cellX: x,
-        cellY: y,
+        x: e.touches[0].clientX,
+        scrollOffset,
+        hasMoved: false
       };
     }
   };
 
-  // Register mouse & touch listeners globally to support swipe sliding
+  // Global mouse / touch scroll tracking listeners
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (!dragStartRef.current) return;
-
-      const dx = e.clientX - dragStartRef.current.clientX;
-      const dy = e.clientY - dragStartRef.current.clientY;
-
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      if (!isMouseDown || swipeEnabled) return;
+      const dx = e.clientX - dragStartRef.current.x;
+      if (Math.abs(dx) > 6) {
         dragStartRef.current.hasMoved = true;
       }
-
       if (dragStartRef.current.hasMoved) {
-        // Horizontal scroll: roughly 24px of move scrolls 1 grid cell
+        // 24px of horizontal shift scrolls 1 cell
+        const deltaCols = Math.round(dx / 24);
+        const newScroll = Math.max(
+          0,
+          Math.min(maxColumnsCount - visibleColumnsCount, dragStartRef.current.scrollOffset - deltaCols)
+        );
+        setScrollOffset(newScroll);
+      }
+    };
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (!isMouseDown || swipeEnabled || !e.touches[0]) return;
+      const dx = e.touches[0].clientX - dragStartRef.current.x;
+      if (Math.abs(dx) > 6) {
+        dragStartRef.current.hasMoved = true;
+      }
+      if (dragStartRef.current.hasMoved) {
         const deltaCols = Math.round(dx / 24);
         const newScroll = Math.max(
           0,
@@ -405,67 +430,33 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
     };
 
     const handleGlobalMouseUp = () => {
-      if (swipeEnabled) {
-        setIsMouseDown(false);
-      } else if (dragStartRef.current) {
-        // If they did NOT move, treat as a single click
-        if (!dragStartRef.current.hasMoved) {
-          handleCellAction(dragStartRef.current.cellX, dragStartRef.current.cellY);
-        }
-        dragStartRef.current = null;
-      }
-    };
-
-    const handleGlobalTouchMove = (e: TouchEvent) => {
-      if (!dragStartRef.current || e.touches.length === 0) return;
-      const touch = e.touches[0];
-
-      const dx = touch.clientX - dragStartRef.current.clientX;
-      const dy = touch.clientY - dragStartRef.current.clientY;
-
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-        dragStartRef.current.hasMoved = true;
-      }
-
-      if (dragStartRef.current.hasMoved) {
-        const deltaCols = Math.round(dx / 24);
-        const newScroll = Math.max(
-          0,
-          Math.min(maxColumnsCount - visibleColumnsCount, dragStartRef.current.scrollOffset - deltaCols)
-        );
-        setScrollOffset(newScroll);
-      }
-    };
-
-    const handleGlobalTouchEnd = () => {
-      if (swipeEnabled) {
-        setIsMouseDown(false);
-      } else if (dragStartRef.current) {
-        if (!dragStartRef.current.hasMoved) {
-          handleCellAction(dragStartRef.current.cellX, dragStartRef.current.cellY);
-        }
-        dragStartRef.current = null;
-      }
+      setIsMouseDown(false);
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
     window.addEventListener('mouseup', handleGlobalMouseUp);
-    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: true });
-    window.addEventListener('touchend', handleGlobalTouchEnd);
+    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+    window.addEventListener('touchend', handleGlobalMouseUp);
 
     return () => {
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('touchmove', handleGlobalTouchMove);
-      window.removeEventListener('touchend', handleGlobalTouchEnd);
+      window.removeEventListener('touchend', handleGlobalMouseUp);
     };
-  }, [scrollOffset, swipeEnabled, elements, editorMode, activeBrush, isMouseDown]);
+  }, [scrollOffset, swipeEnabled, elements, editorMode, activeBrush, isMouseDown, zoomLevel, visibleColumnsCount]);
 
-  const getElementAt = (x: number, y: number): LevelElement | undefined => {
-    return elements.find(el => el.x === x && el.y === y);
+  // Scrolling shortcuts
+  const scrollLeft = () => setScrollOffset(prev => Math.max(0, prev - (zoomLevel === 'large' ? 4 : 6)));
+  const scrollRight = () => setScrollOffset(prev => Math.min(maxColumnsCount - visibleColumnsCount, prev + (zoomLevel === 'large' ? 4 : 6)));
+
+  const handleClearBoard = () => {
+    if (confirm('¿Seguro que deseas eliminar todos los elementos del mapa? El progreso guardado no se borrará a menos que des a Guardar.')) {
+      updateElementsWithHistory([]);
+      setSelectedEditCoord(null);
+    }
   };
 
-  // Shift coordinates in Edit mode
   const handleShiftSelected = (dir: 'up' | 'down' | 'left' | 'right') => {
     if (!selectedEditCoord) return;
     const target = elements.find(el => el.x === selectedEditCoord.x && el.y === selectedEditCoord.y);
@@ -486,270 +477,229 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
     setSelectedEditCoord({ x: nextX, y: nextY });
   };
 
-  const handleClearAll = () => {
-    if (window.confirm('¿Seguro que quieres borrar todos los elementos?')) {
-      updateElementsWithHistory([]);
-      setSelectedEditCoord(null);
-      setInfoMessage('Lienzo vaciado por completo.');
-    }
+  const handleDeleteSelected = () => {
+    if (!selectedEditCoord) return;
+    const filtered = elements.filter(el => !(el.x === selectedEditCoord.x && el.y === selectedEditCoord.y));
+    updateElementsWithHistory(filtered);
+    setSelectedEditCoord(null);
   };
 
-  const handleSave = () => {
-    if (!levelName.trim()) {
-      alert('Introduce un nombre para el nivel.');
-      return;
-    }
-
+  const handleSaveLevel = () => {
     const savedLevel: Level = {
       id: initialLevel?.id || `custom_${Date.now()}`,
-      name: levelName.trim(),
+      name: levelName.trim() || 'Mi Nivel',
       difficulty,
       musicTrack,
+      theme: levelTheme,
       elements,
-      isCustom: true
+      isCustom: true,
+      author: initialLevel?.author || 'Creador'
     };
-
     saveCustomLevel(savedLevel);
-    setInfoMessage('¡Nivel guardado!');
+    setInfoMessage('💾 ¡NIVEL GUARDADO CON ÉXITO!');
   };
 
-  const handlePlaytest = () => {
+  const handlePlaytestLevel = () => {
     const savedLevel: Level = {
       id: initialLevel?.id || `custom_${Date.now()}`,
-      name: levelName.trim(),
+      name: levelName.trim() || 'Mi Nivel',
       difficulty,
       musicTrack,
+      theme: levelTheme,
       elements,
-      isCustom: true
+      isCustom: true,
+      author: initialLevel?.author || 'Creador'
     };
+    saveCustomLevel(savedLevel);
     onPlaytest(savedLevel);
   };
 
-  // Scroll controls
-  const scrollLeft = () => setScrollOffset(prev => Math.max(0, prev - 5));
-  const scrollRight = () => setScrollOffset(prev => Math.min(maxColumnsCount - visibleColumnsCount, prev + 5));
-
-  // Category buttons metadata for the BUILD palette
-  const subCategories = [
-    { id: 'blocks', label: 'Bloques', emoji: '🧱' },
-    { id: 'hazards', label: 'Picos', emoji: '▲' },
-    { id: 'pads', label: 'Pads', emoji: '▰' },
-    { id: 'portals', label: 'Portales', emoji: '🌀' },
-    { id: 'speeds', label: 'Velocidad', emoji: '⚡' },
-  ];
+  const activeBrushesByCategory = BRUSH_OPTIONS.filter(opt => opt.category === buildCategory);
 
   return (
-    <div className="flex flex-col w-full h-full bg-[#1e1e1e] text-white rounded-xl overflow-hidden shadow-2xl border-4 border-black animate-fade-in font-sans select-none">
+    <div className="flex flex-col w-full h-full bg-[#141517] text-white rounded-xl overflow-hidden border-4 border-black animate-fade-in font-sans select-none relative">
       
-      {/* 1. TOP HEADER STATUS PANEL */}
-      <div className="px-5 py-3 bg-[#181818] border-b-4 border-black flex flex-wrap items-center justify-between gap-4">
+      {/* 1. TOP HEADER STATUS PANEL (SLIM & FUTURISTIC) */}
+      <div className="bg-[#121315] border-b-2 border-black/40 px-3 py-1.5 flex items-center justify-between z-20 gap-2 shrink-0">
         
-        {/* Left side: Back to menu and title */}
-        <div className="flex items-center gap-3">
+        {/* Left Actions */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={onSaveAndClose}
-            className="p-2 bg-gradient-to-b from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 border-2 border-black rounded-xl font-bold text-xs uppercase tracking-wider text-white shadow shadow-black flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
+            onClick={() => {
+              if (confirm('¿Quieres salir? Asegúrate de haber guardado tu nivel.')) {
+                onSaveAndClose();
+              }
+            }}
+            className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-500 border border-black rounded-lg font-bold text-xs uppercase tracking-wide cursor-pointer text-white shadow active:translate-y-0.5 transition animate-fade-in"
           >
-            <ArrowLeft className="w-4 h-4" /> VOLVER
+            <ArrowLeft className="w-3.5 h-3.5" /> Salir
           </button>
           
-          <div className="hidden sm:block">
-            <h1 
-              className="text-2xl font-black tracking-wider text-yellow-400 uppercase"
-              style={{
-                textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000',
-              }}
+          <div className="hidden sm:flex flex-col">
+            <span className="text-[10px] text-slate-500 font-bold uppercase leading-none">EDITOR DE</span>
+            <span className="text-sm font-black text-yellow-400 tracking-wider leading-none">NIVELES</span>
+          </div>
+        </div>
+
+        {/* Level Quick Summary Status */}
+        <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-white/5 max-w-xs md:max-w-md truncate">
+          <span className="text-xs font-black text-white truncate uppercase">{levelName || 'SIN NOMBRE'}</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+          <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">{difficulty}</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+          <span className="text-[11px]">{activeTheme.emoji}</span>
+        </div>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-1.5">
+          {/* Settings trigger */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg cursor-pointer text-white flex items-center justify-center shadow active:scale-95 transition"
+            title="Ajustes de música, nombre y temática"
+          >
+            <Sliders className="w-4 h-4 text-cyan-400" />
+          </button>
+
+          {/* Quick Clear */}
+          <button
+            onClick={handleClearBoard}
+            className="p-1.5 bg-slate-800 hover:bg-red-950 hover:text-red-300 border border-black rounded-lg cursor-pointer text-slate-400 flex items-center justify-center shadow active:scale-95 transition"
+            title="Limpiar tablero"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={handleSaveLevel}
+            className="flex items-center gap-1 px-3 py-1 bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 border border-black rounded-lg font-bold text-xs uppercase tracking-wide cursor-pointer text-white shadow active:translate-y-0.5 transition"
+          >
+            <Save className="w-3.5 h-3.5" /> Guardar
+          </button>
+
+          <button
+            onClick={handlePlaytestLevel}
+            className="flex items-center gap-1 px-3 py-1 bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 hover:to-green-600 border border-black rounded-lg font-bold text-xs uppercase tracking-wide cursor-pointer text-white shadow active:translate-y-0.5 transition"
+          >
+            <Play className="w-3.5 h-3.5 text-yellow-300" /> Probar
+          </button>
+        </div>
+      </div>
+
+      {/* 2. MAIN WORKSPACE AREA (SIDEBARS + GRID CANVAS) */}
+      <div className="flex-1 flex overflow-hidden min-h-0 bg-[#1e1f22] relative">
+        
+        {/* LEFT COLUMN: PRIMARY WORK TOOLBOX (SLIM SIDEBAR) */}
+        <div className="w-14 bg-[#121315] border-r-2 border-black/40 py-2 px-1 flex flex-col items-center justify-between z-10 shrink-0 select-none">
+          
+          {/* History Tools */}
+          <div className="flex flex-col gap-2 w-full">
+            <button
+              disabled={historyIndex < 0}
+              onClick={handleUndo}
+              className={`w-10 h-10 border border-black rounded-xl flex items-center justify-center shadow transition active:scale-95 cursor-pointer ${historyIndex >= 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-900/40 text-slate-600 cursor-not-allowed'}`}
+              title="Deshacer"
             >
-              NIVEL CREATOR
-            </h1>
-            <p className="text-[9px] font-mono text-slate-400 uppercase leading-none">Estudio editor de niveles GD</p>
-          </div>
-        </div>
-
-        {/* Middle: Name Input and Difficulty */}
-        <div className="flex items-center gap-2.5 bg-[#121212] p-1.5 rounded-xl border-2 border-neutral-800">
-          <div className="relative">
-            <FileEdit className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={levelName}
-              onChange={e => setLevelName(e.target.value)}
-              placeholder="Nombre del nivel"
-              maxLength={22}
-              className="pl-8 pr-3 py-1 bg-slate-900 border border-slate-800 focus:border-yellow-400 focus:ring-0 text-xs rounded-lg font-bold text-yellow-300 uppercase outline-none w-44 sm:w-56"
-            />
+              <Undo className="w-4 h-4" />
+            </button>
+            <button
+              disabled={historyIndex >= history.length - 1}
+              onClick={handleRedo}
+              className={`w-10 h-10 border border-black rounded-xl flex items-center justify-center shadow transition active:scale-95 cursor-pointer ${historyIndex < history.length - 1 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-900/40 text-slate-600 cursor-not-allowed'}`}
+              title="Rehacer"
+            >
+              <Redo className="w-4 h-4" />
+            </button>
           </div>
 
-          <select
-            value={difficulty}
-            onChange={e => setDifficulty(e.target.value as Difficulty)}
-            className="px-2.5 py-1 bg-slate-900 border border-slate-800 focus:border-yellow-400 focus:ring-0 text-xs rounded-lg font-bold text-cyan-400 uppercase outline-none"
+          {/* Swipe Paint Mode */}
+          <button
+            onClick={() => setSwipeEnabled(!swipeEnabled)}
+            className={`w-10 h-10 border-2 rounded-xl flex flex-col items-center justify-center shadow transition cursor-pointer select-none ${swipeEnabled ? 'bg-gradient-to-b from-green-400 to-green-600 border-yellow-300 text-black font-black animate-pulse' : 'bg-slate-800 border-black text-slate-300 hover:bg-slate-700'}`}
+            title="Arrastrar para pintar (Swipe)"
           >
-            <option value="easy">FÁCIL</option>
-            <option value="medium">MEDIO</option>
-            <option value="hard">DIFÍCIL</option>
-            <option value="insane">INSANO</option>
-            <option value="demon">DEMON</option>
-          </select>
+            <Sparkles className="w-4 h-4" />
+            <span className="text-[7px] font-bold uppercase leading-none mt-0.5">{swipeEnabled ? 'SI' : 'NO'}</span>
+          </button>
 
-          <select
-            value={musicTrack}
-            onChange={e => setMusicTrack(e.target.value)}
-            className="px-2.5 py-1 bg-slate-900 border border-slate-800 focus:border-yellow-400 focus:ring-0 text-xs rounded-lg font-bold text-pink-400 uppercase outline-none"
+          {/* Settings Trigger inside Sidebar */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="w-10 h-10 bg-slate-800 border border-black rounded-xl flex items-center justify-center text-slate-300 hover:bg-slate-700 cursor-pointer shadow transition active:scale-95"
+            title="Ajustes de nivel"
           >
-            <option value="track_stereo">🎵 STEREO</option>
-            <option value="track_back">🎵 BACK TRACK</option>
-            <option value="track_blast">🎵 BLAST</option>
-            <option value="track_dry">🎵 DRY OUT</option>
-            <option value="track_theory">🎵 THEORY</option>
-          </select>
+            <Sliders className="w-4.5 h-4.5" />
+          </button>
+
         </div>
 
-        {/* Right side: Save & Playtest */}
-        <div className="flex items-center gap-2">
+        {/* CENTER AREA: CANVAS GRID + FLOATING NOTIFICATIONS */}
+        <div className="flex-1 p-2 flex flex-col justify-between overflow-hidden min-h-0 relative select-none">
+          
+          {/* Floating Save Notification Alert */}
           {infoMessage && (
-            <div className="text-[10px] font-mono font-bold text-green-400 bg-green-950/40 px-3 py-1.5 rounded-lg border border-green-900/40 uppercase">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-yellow-400 to-amber-500 text-black border-2 border-black font-black uppercase text-xs tracking-wider px-5 py-2.5 rounded-2xl shadow-2xl animate-bounce">
               {infoMessage}
             </div>
           )}
 
-          <button
-            onClick={handleSave}
-            className="p-2 bg-slate-800 hover:bg-slate-700 border-2 border-black rounded-xl text-xs font-bold text-slate-200 flex items-center gap-1.5 shadow active:scale-95 transition cursor-pointer"
-          >
-            <Save className="w-3.5 h-3.5 text-amber-400" /> GUARDAR
-          </button>
-
-          <button
-            onClick={handlePlaytest}
-            className="p-2 bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 hover:to-green-600 border-2 border-black rounded-xl font-black text-xs uppercase text-white shadow shadow-black flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
-          >
-            <Play className="w-3.5 h-3.5 fill-current text-yellow-300" /> PROBAR
-          </button>
-        </div>
-
-      </div>
-
-      {/* 2. MAIN WORKSPACE */}
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden bg-[#242424]">
-        
-        {/* Left Side Quick Panel: Undo/Redo/Swipe/Clear */}
-        <div className="w-full md:w-16 bg-[#161616] p-2 flex md:flex-col justify-around md:justify-start items-center gap-3 border-b-2 md:border-b-0 md:border-r-4 border-black flex-wrap">
-          
-          {/* Undo */}
-          <button
-            onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            className="w-10 h-10 rounded-xl bg-slate-800 border-2 border-black disabled:opacity-30 hover:bg-slate-700 text-white flex items-center justify-center active:scale-90 transition cursor-pointer"
-            title="Deshacer"
-          >
-            <Undo className="w-4 h-4 text-cyan-400" />
-          </button>
-
-          {/* Redo */}
-          <button
-            onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            className="w-10 h-10 rounded-xl bg-slate-800 border-2 border-black disabled:opacity-30 hover:bg-slate-700 text-white flex items-center justify-center active:scale-90 transition cursor-pointer"
-            title="Rehacer"
-          >
-            <Redo className="w-4 h-4 text-cyan-400" />
-          </button>
-
-          {/* Swipe mode toggle */}
-          <button
-            onClick={() => setSwipeEnabled(!swipeEnabled)}
-            className={`w-10 h-10 rounded-xl border-2 border-black flex flex-col items-center justify-center font-black transition-all cursor-pointer ${
-              swipeEnabled
-                ? 'bg-green-500 hover:bg-green-400 text-black shadow-[0_0_10px_rgba(34,197,94,0.5)] border-green-300 scale-105'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
-            }`}
-            title="Modo SWIPE: Activa para pintar arrastrando / Desactiva para deslizar y mover la pantalla con el dedo o ratón"
-          >
-            <span className="text-[7px] font-black uppercase tracking-tighter leading-none font-sans">SWIPE</span>
-            <div className={`w-1.5 h-1.5 rounded-full mt-0.5 ${swipeEnabled ? 'bg-black animate-pulse' : 'bg-slate-500'}`} />
-          </button>
-
-          {/* Clean board */}
-          <button
-            onClick={handleClearAll}
-            className="w-10 h-10 rounded-xl bg-rose-950 hover:bg-rose-900 border-2 border-black text-rose-300 flex items-center justify-center active:scale-90 transition cursor-pointer"
-            title="Borrar Lienzo Completo"
-          >
-            <Trash2 className="w-4 h-4 text-rose-400" />
-          </button>
-
-          <div className="h-0.5 w-8 bg-neutral-800 hidden md:block" />
-
-          {/* Help tip indicator */}
-          <div className="text-[10px] text-slate-500 font-mono text-center select-none hidden md:block">
-            X {scrollOffset}
-          </div>
-        </div>
-
-        {/* Middle Board: Scrollable Grid */}
-        <div className="flex-1 p-4 flex flex-col justify-between overflow-y-auto">
-          
-          {/* Grid Box */}
-          <div className="flex-1 flex flex-col justify-center min-h-[300px]">
-            <div className="flex items-stretch gap-1.5">
-              
-              {/* Vertical indices 7 to 0 (Sky to Ground) */}
-              <div className="flex flex-col justify-between py-1 text-[10px] font-mono font-bold text-slate-500 select-none text-right w-5">
-                {Array.from({ length: verticalRowsCount }).map((_, rIdx) => {
-                  const labelY = verticalRowsCount - 1 - rIdx;
-                  return (
-                    <div key={rIdx} className="h-8 flex items-center justify-end">
-                      Y{labelY}
-                    </div>
-                  );
-                })}
+          {/* GRID CANVAS BOARD CONTAINER */}
+          <div className={`flex-1 ${activeTheme.gridBg} border-4 ${activeTheme.border} ${activeTheme.borderGlow} rounded-2xl p-2 relative shadow-2xl overflow-hidden transition-all duration-300 flex flex-col justify-center`}>
+            
+            {/* Custom Neon Mountain / Grid background effects */}
+            <div className="absolute inset-0 pointer-events-none opacity-10 font-mono text-[9px] flex flex-col justify-between p-3 select-none">
+              <span>GD ENGINE LEVEL BUILDER V2.1</span>
+              <div className="flex justify-between items-end">
+                <span>THEME: {activeTheme.name.toUpperCase()}</span>
+                <span>GRID: {maxColumnsCount} x {verticalRowsCount}</span>
               </div>
+            </div>
 
-              {/* Grid board canvas */}
-              <div className="flex-1 bg-[#0c4391] border-4 border-[#09295c] rounded-2xl p-2 relative shadow-2xl shadow-black/60 overflow-hidden">
-                
-                {/* Horizontal line markers */}
-                <div className="absolute inset-0 grid grid-rows-8 pointer-events-none opacity-20">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="border-b border-cyan-400 w-full" />
-                  ))}
-                </div>
+            {/* The Grid Workspace Scroll and Interaction Wrapper */}
+            <div
+              className="w-full relative select-none cursor-crosshair min-h-0 flex-1 flex flex-col justify-center"
+              onMouseDown={handleGridMouseDown}
+              onTouchStart={handleGridTouchStart}
+            >
+              
+              {/* VERTICAL GRID LINES */}
+              <div className="flex flex-col gap-1 sm:gap-1.5 w-full">
+                {Array.from({ length: verticalRowsCount }).map((_, rIdx) => {
+                  const rowY = verticalRowsCount - 1 - rIdx;
+                  const isSelectedRow = selectedEditCoord && selectedEditCoord.y === rowY;
 
-                <div className="flex flex-col gap-1 z-10 relative">
-                  {Array.from({ length: verticalRowsCount }).map((_, rIdx) => {
-                    const rowY = verticalRowsCount - 1 - rIdx;
-                    return (
-                      <div key={rIdx} className="grid gap-1" style={{ gridTemplateColumns: 'repeat(20, minmax(0, 1fr))' }}>
+                  return (
+                    <div key={rowY} className="flex items-center w-full">
+                      
+                      {/* Left vertical coordinates labels (Y0 - Y7) */}
+                      <span className={`w-5 text-[10px] font-bold font-mono text-center select-none mr-1.5 ${isSelectedRow ? 'text-yellow-400 animate-pulse' : 'text-slate-500'}`}>
+                        Y{rowY}
+                      </span>
+
+                      {/* Row Grid Cells */}
+                      <div
+                        className="grid flex-1 gap-[3px] select-none"
+                        style={{ gridTemplateColumns: `repeat(${visibleColumnsCount}, minmax(0, 1fr))` }}
+                      >
                         {Array.from({ length: visibleColumnsCount }).map((_, colIdx) => {
                           const cellX = scrollOffset + colIdx;
-                          const element = getElementAt(cellX, rowY);
-                          const isStartCol = cellX === 3;
-                          
-                          // Styling
-                          let cellBg = isStartCol 
-                            ? 'bg-emerald-950/20 hover:bg-emerald-900/40 border-[#00e1ff]/15 border-l-[3px] border-l-emerald-400' 
-                            : 'bg-[#1554aa]/40 hover:bg-[#1a62c4]/70 border-[#00e1ff]/15';
-                          let cellText = 'text-slate-600';
+                          const existingElement = elements.find(el => el.x === cellX && el.y === rowY);
+                          const isSelectedCell = selectedEditCoord && selectedEditCoord.x === cellX && selectedEditCoord.y === rowY;
 
-                          if (element) {
-                            const match = BRUSH_OPTIONS.find(t => t.type === element.type);
-                            if (match) {
-                              cellBg = match.color;
-                              if (isStartCol) {
-                                cellBg += ' border-l-[3px] border-l-emerald-400/95';
-                              }
-                            }
+                          let cellBg = 'bg-black/35 hover:bg-white/10 border-white/5';
+                          let cellText = 'text-white/40';
+
+                          if (existingElement) {
+                            cellBg = 'bg-slate-800 border-slate-600 text-white';
+                            cellText = 'text-white';
                           }
 
-                          // Highlight selected item in Edit mode
-                          const isSelectedInEdit = editorMode === 'edit' && selectedEditCoord && selectedEditCoord.x === cellX && selectedEditCoord.y === rowY;
-                          if (isSelectedInEdit) {
-                            cellBg = 'bg-yellow-400 text-black border-yellow-300 ring-2 ring-yellow-400 scale-105 z-20 animate-pulse';
-                            if (isStartCol) {
-                              cellBg += ' border-l-[3px] border-l-emerald-400/95';
-                            }
+                          if (isSelectedCell) {
+                            cellBg = 'bg-yellow-500/45 border-yellow-300 scale-[1.03] z-10';
                           }
+
+                          const cellHeightClass = zoomLevel === 'small' ? 'h-6 sm:h-7' : zoomLevel === 'medium' ? 'h-7 sm:h-8' : 'h-9 sm:h-10';
+                          const cellTextClass = zoomLevel === 'small' ? 'text-[8px]' : 'text-xs';
 
                           return (
                             <button
@@ -757,78 +707,104 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
                               onMouseDown={(e) => handleCellMouseDown(cellX, rowY, e)}
                               onMouseEnter={() => handleCellMouseEnter(cellX, rowY)}
                               onTouchStart={(e) => handleCellTouchStart(cellX, rowY, e)}
-                              className={`h-8 border text-xs font-bold rounded flex items-center justify-center transition overflow-hidden p-[1px] relative ${cellBg} ${cellText}`}
-                              title={isStartCol ? `Punto de Inicio (Spawn) | Celda: X:${cellX}, Y:${rowY}` : `Celda: X:${cellX}, Y:${rowY}`}
+                              className={`border rounded flex items-center justify-center transition-all overflow-hidden p-[1px] relative cursor-pointer select-none ${cellBg} ${cellText} ${cellHeightClass}`}
+                              title={`Coordenada X:${cellX}, Y:${rowY}`}
                             >
-                              {element ? (
-                                <div className="w-full h-full">
-                                  {renderVisualElement(element.type)}
+                              {existingElement ? (
+                                <div className="w-full h-full flex items-center justify-center select-none pointer-events-none">
+                                  {renderVisualElement(existingElement.type)}
                                 </div>
-                              ) : isStartCol && rowY === 0 ? (
-                                <span className="text-[7px] font-black text-emerald-400 animate-pulse uppercase leading-none tracking-tighter absolute">GO</span>
-                              ) : null}
+                              ) : (
+                                <span className={`${cellTextClass} opacity-30 select-none font-mono font-medium pointer-events-none`}>
+                                  +
+                                </span>
+                              )}
+                              
+                              {/* Small coordinate visual tag on active selections */}
+                              {isSelectedCell && (
+                                <span className="absolute bottom-0 right-0 bg-yellow-400 text-black font-mono font-bold text-[6px] px-0.5 leading-none select-none">
+                                  SEL
+                                </span>
+                              )}
                             </button>
                           );
                         })}
                       </div>
-                    );
-                  })}
-                </div>
+
+                    </div>
+                  );
+                })}
               </div>
+
             </div>
 
-            {/* Neon glowing GD grid floor line */}
-            <div className="h-4 bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border-t-2 border-cyan-500 ml-6 rounded-b-xl flex items-center justify-between px-6 text-[8px] font-mono font-bold tracking-[0.2em] text-cyan-400 select-none">
-              <span>◀ SUELO DEL MAPA (ALTURA 0) ▶</span>
-              <span>DESLIZA TU RATÓN PARA DIBUJAR BLOQUES RÁPIDO</span>
+            {/* Bottom ground highlight bar matching active selected theme border */}
+            <div className={`h-2.5 bg-gradient-to-r from-slate-900/60 to-slate-800/60 border-t-2 ${activeTheme.border} ml-6 rounded-b-xl flex items-center justify-between px-6 text-[8px] font-mono font-bold tracking-[0.2em] text-slate-500 select-none`}>
+              <span>SUELO DE JUEGO (COLLISION Y=0)</span>
+              <span>X:{scrollOffset} - X:{scrollOffset + visibleColumnsCount - 1}</span>
             </div>
+
           </div>
 
-          {/* Bottom Scrolling Navigation Bar */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 bg-[#141414] p-3 rounded-xl border-2 border-black">
+          {/* 3. COMPACT SLIM SCROLL CONTROLLER & ZOOM CONTROLS (ROW BELOW GRID) */}
+          <div className="mt-1.5 flex flex-row items-center justify-between gap-3 bg-[#121315] p-1.5 rounded-xl border border-black/40 shrink-0 select-none">
             
-            <div className="flex items-center gap-3">
-              <button
-                onClick={scrollLeft}
-                disabled={scrollOffset === 0}
-                className="w-11 h-9 bg-gradient-to-b from-pink-500 to-pink-700 hover:from-pink-400 hover:to-pink-600 border-2 border-black disabled:opacity-20 rounded-xl text-white font-black flex items-center justify-center transition active:scale-90 cursor-pointer shadow-[0_2px_4px_rgba(0,0,0,0.4)]"
-                title="Atrás 5 celdas"
-              >
-                ◀◀
-              </button>
+            {/* Scroll Left */}
+            <button
+              onClick={scrollLeft}
+              disabled={scrollOffset <= 0}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center border border-black shadow cursor-pointer text-white ${scrollOffset <= 0 ? 'bg-slate-900/40 text-slate-700 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-700'}`}
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-pink-400 font-mono font-black tracking-wide uppercase">CÁMARA:</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={maxColumnsCount - visibleColumnsCount}
-                  value={scrollOffset}
-                  onChange={e => setScrollOffset(parseInt(e.target.value))}
-                  className="w-36 sm:w-56 accent-pink-500 h-2 bg-black/80 rounded-lg appearance-none cursor-pointer border border-neutral-800"
-                />
-                <span className="text-xs font-mono font-black text-white bg-black/60 px-2.5 py-1 rounded-lg border border-neutral-800 shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)]">
-                  X:{scrollOffset} - X:{scrollOffset + visibleColumnsCount}
-                </span>
-              </div>
-
-              <button
-                onClick={scrollRight}
-                disabled={scrollOffset >= maxColumnsCount - visibleColumnsCount}
-                className="w-11 h-9 bg-gradient-to-b from-pink-500 to-pink-700 hover:from-pink-400 hover:to-pink-600 border-2 border-black disabled:opacity-20 rounded-xl text-white font-black flex items-center justify-center transition active:scale-90 cursor-pointer shadow-[0_2px_4px_rgba(0,0,0,0.4)]"
-                title="Adelante 5 celdas"
-              >
-                ▶▶
-              </button>
+            {/* Drag scroll bar slider */}
+            <div className="flex-1 flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 font-mono tracking-tighter select-none">X:0</span>
+              <input
+                type="range"
+                min={0}
+                max={maxColumnsCount - visibleColumnsCount}
+                value={scrollOffset}
+                onChange={(e) => setScrollOffset(parseInt(e.target.value))}
+                className="flex-1 accent-yellow-400 h-1.5 bg-slate-900 rounded-lg cursor-pointer"
+              />
+              <span className="text-[10px] font-bold text-slate-400 font-mono tracking-tighter select-none">X:{maxColumnsCount - visibleColumnsCount}</span>
             </div>
 
-            <div className="text-[10px] font-mono text-slate-300 flex items-center gap-1.5 bg-cyan-950/20 p-2 rounded-lg border border-cyan-900/30">
-              <Sparkles className="w-4 h-4 text-cyan-400 flex-shrink-0 animate-pulse" />
-              <span>
-                {swipeEnabled 
-                  ? '👉 MODO PINTAR ACTIVO: Arrastra sobre la cuadrícula para construir rápido.' 
-                  : '👉 MODO NAVEGAR ACTIVO: Desliza con un dedo o ratón sobre la cuadrícula para moverte.'}
-              </span>
+            {/* Scroll Right */}
+            <button
+              onClick={scrollRight}
+              disabled={scrollOffset >= maxColumnsCount - visibleColumnsCount}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center border border-black shadow cursor-pointer text-white ${scrollOffset >= maxColumnsCount - visibleColumnsCount ? 'bg-slate-900/40 text-slate-700 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-700'}`}
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+
+            {/* Quick Zoom Multi-Selector (Beautifully compact) */}
+            <div className="flex items-center gap-1 bg-black/45 p-0.5 rounded-lg border border-white/5">
+              <span className="text-[8px] font-bold text-slate-500 px-1 uppercase tracking-tighter hidden md:inline">Vista:</span>
+              <button
+                onClick={() => setZoomLevel('large')}
+                className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded tracking-tighter ${zoomLevel === 'large' ? 'bg-yellow-400 text-black font-black' : 'text-slate-400 hover:text-white'}`}
+                title="Zoom de Cerca (16 columnas)"
+              >
+                Cerca
+              </button>
+              <button
+                onClick={() => setZoomLevel('medium')}
+                className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded tracking-tighter ${zoomLevel === 'medium' ? 'bg-yellow-400 text-black font-black' : 'text-slate-400 hover:text-white'}`}
+                title="Estándar (20 columnas)"
+              >
+                Estándar
+              </button>
+              <button
+                onClick={() => setZoomLevel('small')}
+                className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded tracking-tighter ${zoomLevel === 'small' ? 'bg-yellow-400 text-black font-black' : 'text-slate-400 hover:text-white'}`}
+                title="Zoom Lejos (24 columnas)"
+              >
+                Lejos
+              </button>
             </div>
 
           </div>
@@ -837,80 +813,86 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
 
       </div>
 
-      {/* 3. GD ORIGINAL REDESIGNED BOTTOM PANEL (Screenshot-2026_0712_230116.png) */}
-      <div className="bg-[#121212] border-t-4 border-black p-4 flex flex-col md:flex-row gap-4 items-stretch select-none">
+      {/* 4. REDESIGNED SLIM PANEL (MODES AND PALETTE CONSOLIDATED) */}
+      <div className="bg-[#121315] border-t-2 border-black/50 p-2 flex flex-row gap-3 items-center shrink-0 h-[105px] overflow-hidden select-none">
         
-        {/* Left Side: Three Large Action Modes Tabs (BUILD, EDIT, DELETE) */}
-        <div className="flex md:flex-col gap-1.5 justify-center md:justify-start w-full md:w-32">
-          
-          {/* BUILD */}
+        {/* LEFT COMPACT SECTION: EDITOR MODE SELECTOR TABS */}
+        <div className="flex flex-col gap-1 bg-black/30 p-1.5 rounded-xl border border-white/5 h-full justify-between shrink-0 w-[110px]">
           <button
-            onClick={() => setEditorMode('build')}
-            className={`flex-1 py-2 rounded-xl text-xs font-black uppercase border-2 border-black tracking-wider transition ${editorMode === 'build' ? 'bg-green-500 text-black shadow shadow-green-400 scale-105' : 'bg-[#2a2a2a] hover:bg-[#333] text-slate-300'}`}
+            onClick={() => {
+              setEditorMode('build');
+              setSelectedEditCoord(null);
+            }}
+            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'build' ? 'bg-gradient-to-b from-green-500 to-green-700 text-white border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            🧱 BUILD
+            <span className="text-[10px]">🧱</span> CONSTRUIR
           </button>
-
-          {/* EDIT */}
           <button
             onClick={() => {
               setEditorMode('edit');
               setSelectedEditCoord(null);
             }}
-            className={`flex-1 py-2 rounded-xl text-xs font-black uppercase border-2 border-black tracking-wider transition ${editorMode === 'edit' ? 'bg-cyan-500 text-black shadow shadow-cyan-400 scale-105' : 'bg-[#2a2a2a] hover:bg-[#333] text-slate-300'}`}
+            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'edit' ? 'bg-gradient-to-b from-cyan-500 to-cyan-700 text-white border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            ✏️ EDIT
+            <span className="text-[10px]">✏️</span> EDITAR
           </button>
-
-          {/* DELETE */}
           <button
             onClick={() => {
               setEditorMode('delete');
               setSelectedEditCoord(null);
             }}
-            className={`flex-1 py-2 rounded-xl text-xs font-black uppercase border-2 border-black tracking-wider transition ${editorMode === 'delete' ? 'bg-rose-600 text-white shadow shadow-rose-500 scale-105' : 'bg-[#2a2a2a] hover:bg-[#333] text-slate-300'}`}
+            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'delete' ? 'bg-gradient-to-b from-red-600 to-red-800 text-white border-red-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            🗑️ DELETE
+            <span className="text-[10px]">🗑️</span> BORRAR
           </button>
-
         </div>
 
-        {/* Right Side: The Content Area depending on Mode */}
-        <div className="flex-1 bg-[#202020] border-2 border-black rounded-2xl p-3 flex flex-col justify-center relative shadow-inner">
+        {/* RIGHT DYNAMIC PALETTE / OPERATIONS SECTION */}
+        <div className="flex-1 bg-black/40 border border-white/5 rounded-xl p-1.5 flex flex-col h-full justify-between overflow-hidden relative">
           
+          {/* BUILD MODE ACTIVE */}
           {editorMode === 'build' && (
-            /* BUILD PALETTE CONTENT */
-            <div className="w-full flex flex-col gap-3">
-              {/* Build Categories row */}
-              <div className="flex gap-1 overflow-x-auto pb-1 border-b border-neutral-800">
-                {subCategories.map(sub => (
-                  <button
-                    key={sub.id}
-                    onClick={() => setBuildCategory(sub.id as any)}
-                    className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg border border-black flex items-center gap-1 transition ${buildCategory === sub.id ? 'bg-yellow-400 text-black font-extrabold' : 'bg-[#2d2d2d] text-slate-300 hover:text-white'}`}
-                  >
-                    <span>{sub.emoji}</span>
-                    <span>{sub.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Grid of actual blocks for chosen Category */}
-              <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-12 gap-2 max-h-20 overflow-y-auto">
-                {BRUSH_OPTIONS.filter(o => o.category === buildCategory).map(tool => {
-                  const isSelected = activeBrush === tool.type;
+            <div className="flex flex-col h-full justify-between overflow-hidden">
+              {/* Category tabs row */}
+              <div className="flex items-center gap-1.5 overflow-x-auto shrink-0 pb-0.5 scrollbar-thin">
+                {(['blocks', 'hazards', 'pads', 'portals', 'speeds'] as const).map(cat => {
+                  const label = cat === 'blocks' ? '🧱 BLOQUES' : cat === 'hazards' ? '🔺 PICOS' : cat === 'pads' ? '▰ PADS' : cat === 'portals' ? '🌀 PORTALES' : '⚡ VELOCIDAD';
+                  const active = buildCategory === cat;
                   return (
                     <button
-                      key={tool.type}
-                      onClick={() => setActiveBrush(tool.type)}
-                      className={`h-11 rounded-xl border-2 flex flex-col items-center justify-center p-0.5 relative transition duration-100 ${isSelected ? 'border-yellow-400 bg-yellow-950/20 text-yellow-300 scale-105' : 'border-neutral-900 bg-slate-900 hover:border-slate-600 text-slate-300'}`}
-                      title={tool.name}
+                      key={cat}
+                      onClick={() => {
+                        setBuildCategory(cat);
+                        // Default to first brush in that category
+                        const defaultBrush = BRUSH_OPTIONS.find(opt => opt.category === cat);
+                        if (defaultBrush) setActiveBrush(defaultBrush.type);
+                      }}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-tight shrink-0 uppercase transition cursor-pointer ${active ? 'bg-yellow-400 text-black border-2 border-black font-black' : 'bg-slate-900/80 text-slate-400 border border-transparent hover:text-slate-200'}`}
                     >
-                      <div className="w-5 h-5 flex items-center justify-center mb-2.5">
-                        {renderVisualElement(tool.type)}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Brushes Items Picker Row */}
+              <div className="flex-1 flex items-center gap-2 overflow-x-auto overflow-y-hidden py-1 px-1 scrollbar-thin">
+                {activeBrushesByCategory.map(brush => {
+                  const active = activeBrush === brush.type;
+                  return (
+                    <button
+                      key={brush.type}
+                      onClick={() => setActiveBrush(brush.type)}
+                      className={`h-11 w-11 shrink-0 rounded-lg border-2 flex flex-col items-center justify-center p-[2px] transition hover:scale-105 active:scale-95 relative cursor-pointer select-none ${active ? 'bg-gradient-to-b from-yellow-300 to-yellow-500 border-black text-black scale-103 shadow-md shadow-yellow-400/20 z-10' : 'bg-slate-900/90 border-slate-700 text-slate-300'}`}
+                      title={brush.name}
+                    >
+                      <div className="w-full h-full flex items-center justify-center select-none pointer-events-none">
+                        {renderVisualElement(brush.type)}
                       </div>
-                      <span className="text-[6.5px] text-slate-400 font-extrabold tracking-tight absolute bottom-0.5 truncate max-w-[95%] block uppercase">
-                        {tool.name.split(' ')[0]}
+                      
+                      {/* Name tag or dot label */}
+                      <span className="absolute bottom-[1px] text-[6px] font-black tracking-tighter uppercase leading-none truncate max-w-full px-0.5 pointer-events-none">
+                        {brush.name.split(' ')[0]}
                       </span>
                     </button>
                   );
@@ -919,81 +901,110 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
             </div>
           )}
 
+          {/* DELETE MODE ACTIVE */}
           {editorMode === 'delete' && (
-            /* DELETE PANEL CONTENT */
-            <div className="w-full flex flex-col items-center justify-center p-3 text-center">
-              <span className="text-rose-400 font-extrabold text-xs uppercase animate-pulse">
-                💥 Modo Borrador Activo 💥
-              </span>
-              <p className="text-[10px] text-slate-400 font-mono mt-1">
-                Haz clic o arrastra el ratón sobre cualquier celda del mapa con bloques para eliminarlos instantáneamente del nivel.
-              </p>
+            <div className="flex items-center h-full gap-3 px-3">
+              <div className="w-12 h-12 rounded-full bg-red-950/80 border border-red-500/30 flex items-center justify-center shrink-0">
+                <span className="text-xl">💥</span>
+              </div>
+              <div className="flex flex-col">
+                <h4 className="text-[11px] font-black text-red-400 uppercase tracking-wider leading-tight">MODO BORRADOR ACTIVO</h4>
+                <p className="text-[10px] text-slate-400 leading-normal max-w-xl">
+                  Haz clic o arrastra sobre cualquier objeto colocado en la cuadrícula de arriba para eliminarlo del nivel. ¡Úsalo con cuidado!
+                </p>
+              </div>
             </div>
           )}
 
+          {/* EDIT MODE ACTIVE */}
           {editorMode === 'edit' && (
-            /* EDIT CONTROLS PANEL CONTENT */
-            <div className="w-full flex flex-col justify-center min-h-[70px]">
+            <div className="flex-1 flex items-center h-full">
               {selectedEditCoord ? (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
-                  <div className="text-left font-mono text-xs">
-                    <span className="text-yellow-400 font-bold block uppercase">OBJETO SELECCIONADO</span>
-                    <span className="text-slate-400 text-[10px]">Coordenadas actuales: X:{selectedEditCoord.x}, Y:{selectedEditCoord.y}</span>
-                  </div>
+                (() => {
+                  const elementAtCoord = elements.find(el => el.x === selectedEditCoord.x && el.y === selectedEditCoord.y);
+                  return (
+                    <div className="w-full flex items-center justify-between gap-2 px-1 select-none animate-fade-in">
+                      
+                      {/* Left: Element Info Details */}
+                      <div className="flex items-center gap-2">
+                        <div className="w-11 h-11 bg-slate-900 border border-slate-700 rounded-lg p-1.5 shrink-0 flex items-center justify-center">
+                          {elementAtCoord ? renderVisualElement(elementAtCoord.type) : '❓'}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-yellow-400 leading-none">SELECCIONADO:</span>
+                          <span className="text-xs font-black truncate max-w-[120px] leading-tight uppercase text-white">
+                            {elementAtCoord ? BRUSH_OPTIONS.find(o => o.type === elementAtCoord.type)?.name : 'Elemento'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400 leading-none">
+                            Coord: X:{selectedEditCoord.x}, Y:{selectedEditCoord.y}
+                          </span>
+                        </div>
+                      </div>
 
-                  {/* Micro Shift Controls */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-400 font-mono mr-1">MOVER:</span>
-                    <button
-                      onClick={() => handleShiftSelected('left')}
-                      className="w-10 py-1 bg-slate-800 hover:bg-slate-700 border border-black rounded text-xs active:scale-90 transition font-bold"
-                      title="Mover Izquierda"
-                    >
-                      ◀
-                    </button>
-                    <button
-                      onClick={() => handleShiftSelected('down')}
-                      className="w-10 py-1 bg-slate-800 hover:bg-slate-700 border border-black rounded text-xs active:scale-90 transition font-bold"
-                      title="Mover Abajo"
-                    >
-                      ▼
-                    </button>
-                    <button
-                      onClick={() => handleShiftSelected('up')}
-                      className="w-10 py-1 bg-slate-800 hover:bg-slate-700 border border-black rounded text-xs active:scale-90 transition font-bold"
-                      title="Mover Arriba"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => handleShiftSelected('right')}
-                      className="w-10 py-1 bg-slate-800 hover:bg-slate-700 border border-black rounded text-xs active:scale-90 transition font-bold"
-                      title="Mover Derecha"
-                    >
-                      ▶
-                    </button>
-                  </div>
+                      {/* Middle: Coordinate Shifting Controls (Arrow Pad) */}
+                      <div className="flex items-center gap-1.5 bg-black/35 p-1 rounded-xl border border-white/5">
+                        <button
+                          onClick={() => handleShiftSelected('left')}
+                          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg font-black text-xs cursor-pointer text-white flex items-center justify-center active:scale-90 select-none"
+                          title="Desplazar a la izquierda"
+                        >
+                          ◀
+                        </button>
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => handleShiftSelected('up')}
+                            className="w-7 h-3.5 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg font-black text-[8px] cursor-pointer text-white flex items-center justify-center active:scale-90 select-none"
+                            title="Desplazar arriba"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => handleShiftSelected('down')}
+                            className="w-7 h-3.5 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg font-black text-[8px] cursor-pointer text-white flex items-center justify-center active:scale-90 select-none"
+                            title="Desplazar abajo"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => handleShiftSelected('right')}
+                          className="w-7 h-7 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg font-black text-xs cursor-pointer text-white flex items-center justify-center active:scale-90 select-none"
+                          title="Desplazar a la derecha"
+                        >
+                          ▶
+                        </button>
+                      </div>
 
-                  <button
-                    onClick={() => {
-                      const filtered = elements.filter(el => !(el.x === selectedEditCoord.x && el.y === selectedEditCoord.y));
-                      updateElementsWithHistory(filtered);
-                      setSelectedEditCoord(null);
-                      setInfoMessage('Objeto Eliminado');
-                    }}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-black text-xs font-black rounded-lg transition active:scale-95 flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-black" /> ELIMINAR OBJ
-                  </button>
-                </div>
+                      {/* Right: Quick actions on selection */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleDeleteSelected}
+                          className="px-2.5 py-1.5 bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 border border-black rounded-lg font-bold text-[9px] uppercase cursor-pointer text-white flex items-center gap-1 shadow active:translate-y-0.5 transition select-none"
+                        >
+                          <Trash2 className="w-3 h-3" /> Borrar Objeto
+                        </button>
+                        <button
+                          onClick={() => setSelectedEditCoord(null)}
+                          className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 border border-black rounded-lg font-bold text-[9px] uppercase cursor-pointer text-slate-300 active:scale-95 transition"
+                        >
+                          Listo
+                        </button>
+                      </div>
+
+                    </div>
+                  );
+                })()
               ) : (
-                <div className="w-full text-center py-2">
-                  <span className="text-cyan-400 font-bold text-xs uppercase">
-                    🔍 Selección de Edición 🔍
-                  </span>
-                  <p className="text-[10px] text-slate-400 font-mono mt-1">
-                    Haz clic en cualquier bloque colocado en la cuadrícula de arriba para seleccionarlo. ¡Podrás desplazarlo con precisión o eliminarlo!
-                  </p>
+                <div className="flex items-center h-full gap-3 px-3 w-full">
+                  <div className="w-12 h-12 rounded-full bg-cyan-950/80 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                    <span className="text-xl">🔍</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <h4 className="text-[11px] font-black text-cyan-400 uppercase tracking-wider leading-tight">MODO SELECCIÓN ACTIVO</h4>
+                    <p className="text-[10px] text-slate-400 leading-normal max-w-xl">
+                      Haz clic en cualquier bloque colocado en la cuadrícula de arriba para seleccionarlo. ¡Podrás desplazarlo con precisión o eliminarlo!
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1002,6 +1013,90 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
         </div>
 
       </div>
+
+      {/* 5. SETTINGS PANEL OVERLAY MODAL */}
+      {showSettingsModal && (
+        <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in p-4 animate-fade-in">
+          <div className="bg-[#1a1b1e] border-4 border-yellow-400 rounded-2xl p-6 w-full max-w-md shadow-2xl shadow-yellow-400/20 relative">
+            <h3 className="text-xl font-black text-yellow-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              ⚙️ AJUSTES DE NIVEL
+            </h3>
+            
+            {/* Settings Fields */}
+            <div className="flex flex-col gap-4">
+              {/* Name */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Nivel</label>
+                <input
+                  type="text"
+                  value={levelName}
+                  onChange={e => setLevelName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold font-mono focus:border-yellow-400 focus:ring-0 outline-none uppercase"
+                  maxLength={22}
+                />
+              </div>
+
+              {/* Difficulty */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-400 uppercase">Dificultad</label>
+                <select
+                  value={difficulty}
+                  onChange={e => setDifficulty(e.target.value as Difficulty)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-cyan-400 font-bold focus:border-yellow-400 focus:ring-0 outline-none uppercase"
+                >
+                  <option value="easy">FÁCIL ⭐</option>
+                  <option value="normal">NORMAL ⭐⭐</option>
+                  <option value="hard">DIFÍCIL ⭐⭐⭐</option>
+                  <option value="insane">INSANO ⭐⭐⭐⭐</option>
+                  <option value="demon">DEMON 💀</option>
+                </select>
+              </div>
+
+              {/* Music */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-400 uppercase">Banda Sonora</label>
+                <select
+                  value={musicTrack}
+                  onChange={e => setMusicTrack(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-pink-400 font-bold focus:border-yellow-400 focus:ring-0 outline-none uppercase"
+                >
+                  <option value="track_stereo">🎵 STEREO MADNESS</option>
+                  <option value="track_back">🎵 BACK ON TRACK</option>
+                  <option value="track_blast">🎵 BLAST PROCESSING</option>
+                  <option value="track_dry">🎵 DRY OUT</option>
+                  <option value="track_theory">🎵 THEORY OF EVERYTH.</option>
+                </select>
+              </div>
+
+              {/* Theme Picker */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-400 uppercase mb-1">Tema del Nivel</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {LEVEL_THEMES.map(theme => (
+                    <button
+                      key={theme.id}
+                      onClick={() => setLevelTheme(theme.id)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold border-2 transition uppercase flex flex-col items-center justify-center gap-1 ${levelTheme === theme.id ? 'bg-yellow-400 border-black text-black scale-105 shadow-md shadow-yellow-400/20' : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'}`}
+                    >
+                      <span className="text-base">{theme.emoji}</span>
+                      <span className="text-[9px] tracking-tighter leading-none">{theme.name.split(' ')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-5 py-2.5 bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 hover:to-green-600 border-2 border-black rounded-xl font-bold text-xs uppercase text-white shadow shadow-black flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-yellow-300" /> APLICAR Y CERRAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

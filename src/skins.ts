@@ -13,6 +13,19 @@ export const CUBE_SKINS: Skin[] = [
   { id: 'cube_angry', name: 'Enojado' },
   { id: 'cube_cool', name: 'Gafas de Sol' },
   { id: 'cube_creeper', name: 'Creeper' },
+  { id: 'cube_spiral', name: 'Espiral' },
+  { id: 'cube_ninja', name: 'Ninja' },
+  { id: 'cube_skull', name: 'Calavera' },
+  { id: 'cube_crown', name: 'Corona Real' },
+  { id: 'cube_smile', name: 'Feliz' },
+  { id: 'cube_companion', name: 'Cubo de Compañía' },
+  { id: 'cube_iron', name: 'Héroe de Hierro' },
+  { id: 'cube_kitty', name: 'Neko Kitty' },
+  { id: 'cube_alien', name: 'Extraterrestre' },
+  { id: 'cube_steve', name: 'Steve' },
+  { id: 'cube_pacman', name: 'Pac-Man' },
+  { id: 'cube_matrix', name: 'Código Matrix' },
+  { id: 'cube_steampunk', name: 'Vapor Steampunk' },
 ];
 
 export const WAVE_SKINS: Skin[] = [
@@ -20,6 +33,17 @@ export const WAVE_SKINS: Skin[] = [
   { id: 'wave_dual', name: 'Doble Punta' },
   { id: 'wave_cyber', name: 'Ciber Nave' },
   { id: 'wave_spiked', name: 'Puntas Aladas' },
+  { id: 'wave_diamond', name: 'Diamante' },
+  { id: 'wave_phoenix', name: 'Fénix Ardiente' },
+  { id: 'wave_skull', name: 'Calavera Espacial' },
+  { id: 'wave_demon', name: 'Dardo Demoniaco' },
+  { id: 'wave_ufo', name: 'OVNI de Luz' },
+  { id: 'wave_rocket', name: 'Cohete' },
+  { id: 'wave_angel', name: 'Alas de Ángel' },
+  { id: 'wave_bat', name: 'Murciélago' },
+  { id: 'wave_vortex', name: 'Vórtice Cósmico' },
+  { id: 'wave_spear', name: 'Lanza Celestial' },
+  { id: 'wave_alien', name: 'Nave Alien' },
 ];
 
 export const ROBOT_SKINS: Skin[] = [
@@ -27,6 +51,15 @@ export const ROBOT_SKINS: Skin[] = [
   { id: 'robot_gladiator', name: 'Gladiador' },
   { id: 'robot_cat', name: 'Neko Cyber' },
   { id: 'robot_heavy', name: 'Armadura Pesada' },
+  { id: 'robot_cyclops', name: 'Cíclope Láser' },
+  { id: 'robot_steampunk', name: 'Vapor Mecánico' },
+  { id: 'robot_angel', name: 'Querubín' },
+  { id: 'robot_pirate', name: 'Pirata Espacial' },
+  { id: 'robot_samurai', name: 'Samurái Ronin' },
+  { id: 'robot_terminator', name: 'Terminator T-800' },
+  { id: 'robot_bunny', name: 'Conejo Robot' },
+  { id: 'robot_spider', name: 'Arácnido de Acero' },
+  { id: 'robot_wizard', name: 'Mago Eléctrico' },
 ];
 
 export const BALL_SKINS: Skin[] = [
@@ -34,6 +67,17 @@ export const BALL_SKINS: Skin[] = [
   { id: 'ball_saw', name: 'Sierras' },
   { id: 'ball_target', name: 'Blanco' },
   { id: 'ball_biohazard', name: 'Peligro' },
+  { id: 'ball_turbine', name: 'Turbina' },
+  { id: 'ball_yinyang', name: 'Yin Yang' },
+  { id: 'ball_star', name: 'Estrella Ninja' },
+  { id: 'ball_atom', name: 'Átomo Nuclear' },
+  { id: 'ball_flower', name: 'Flor de Fuego' },
+  { id: 'ball_shield', name: 'Escudo Guardián' },
+  { id: 'ball_vortex', name: 'Vórtice' },
+  { id: 'ball_cookie', name: 'Galleta' },
+  { id: 'ball_spiral', name: 'Espiral Rápida' },
+  { id: 'ball_pokeball', name: 'Pokéball' },
+  { id: 'ball_gear', name: 'Engranaje' },
 ];
 
 export const COLOR_PALETTE = [
@@ -49,6 +93,15 @@ export const COLOR_PALETTE = [
   '#34D399', // Emerald
   '#F59E0B', // Amber
   '#111827', // Obsidian/Dark Charcoal
+  '#FF1493', // Deep Pink 💖
+  '#1E90FF', // Dodger Blue 💙
+  '#FFD700', // Gold 🌟
+  '#ADFF2F', // Green Yellow 🍏
+  '#FF6347', // Tomato 🍅
+  '#40E0D0', // Turquoise 💎
+  '#4B0082', // Indigo 🎆
+  '#00FF7F', // Spring Green 🌿
+  '#FF8C00', // Dark Orange 🍊
   '#FFB7B2', // Pastel Pink 🌸
   '#FFDAC1', // Pastel Peach 🍑
   '#E2F0CB', // Pastel Soft Green 🍏

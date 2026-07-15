@@ -10,12 +10,39 @@ import { audio } from '../audio';
 import { TILE_SIZE, GROUND_Y_PIXELS, gridToX, gridToY } from '../levels';
 import { Play, RotateCcw, X, Volume2, VolumeX, Award, ShieldAlert } from 'lucide-react';
 
+export interface LevelTheme {
+  id: string;
+  name: string;
+  emoji: string;
+  bg: string;
+  mountain: string;
+  skyGlow: string;
+  neon: string;
+}
+
+export const LEVEL_THEMES: LevelTheme[] = [
+  { id: 'purple', name: 'Púrpura Cósmico', emoji: '🔮', bg: '#6D28D9', mountain: '#5B21B6', skyGlow: '#4C1D95', neon: '#10B981' },
+  { id: 'cyber', name: 'Cyberpunk Neon', emoji: '🌌', bg: '#090D1A', mountain: '#131930', skyGlow: '#1F2A4C', neon: '#FF007F' },
+  { id: 'toxic', name: 'Ácido Radiactivo', emoji: '☣️', bg: '#022C22', mountain: '#064E3B', skyGlow: '#0F766E', neon: '#A3E635' },
+  { id: 'lava', name: 'Fuego Volcánico', emoji: '🔥', bg: '#2D0606', mountain: '#450A0A', skyGlow: '#7F1D1D', neon: '#EA580C' },
+  { id: 'slate', name: 'Pizarra Brutal', emoji: '🩶', bg: '#0F172A', mountain: '#1E293B', skyGlow: '#334155', neon: '#38BDF8' },
+  { id: 'sunset', name: 'Atardecer Oro', emoji: '🌅', bg: '#451A03', mountain: '#78350F', skyGlow: '#92400E', neon: '#F59E0B' },
+];
+
 interface GameCanvasProps {
   level: Level;
   skins: PlayerSkins;
   onExit: () => void;
   isPlaytesting?: boolean;
   onProgress?: (percentage: number, attempts: number, isWon: boolean) => void;
+  multiplayerState?: {
+    isMultiplayer: boolean;
+    roomId: string | null;
+    socket: WebSocket | null;
+    players: any[];
+    isLeader: boolean;
+  };
+  username?: string;
 }
 
 interface Particle {
@@ -29,7 +56,15 @@ interface Particle {
   maxLife: number;
 }
 
-export default function GameCanvas({ level, skins, onExit, isPlaytesting = false, onProgress }: GameCanvasProps) {
+export default function GameCanvas({ 
+  level, 
+  skins, 
+  onExit, 
+  isPlaytesting = false, 
+  onProgress,
+  multiplayerState,
+  username
+}: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -78,7 +113,22 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     animationTick: 0,
     levelStartTime: Date.now(),
     collectedCoins: [] as string[],
+    isDying: false,
+    spectatingUser: null as string | null,
+    syncFrameCounter: 0,
   });
+
+  // Keep other players' states in multiplayer mode
+  const otherPlayersRef = useRef<Record<string, {
+    username: string;
+    skins: any;
+    x: number;
+    y: number;
+    gamemode: string;
+    isDead: boolean;
+    rotation?: number;
+    progress?: number;
+  }>>({});
 
   // Calculate overall level end coordinate
   const levelElements = level.elements;
@@ -124,6 +174,8 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     state.lastPadId = '';
     state.lastRingId = '';
     state.levelPassed = false;
+    state.isDying = false;
+    state.spectatingUser = null;
     state.levelStartTime = Date.now();
     state.collectedCoins = [];
     setCollectedCoins([]);
@@ -172,6 +224,9 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
 
   // Handle Input triggers (jump, change gravity, etc.)
   const handleTriggerPress = () => {
+    // Resume audio context on any user interaction
+    audio.resumeContext();
+
     const state = stateRef.current;
     if (isGameOver || hasWon || isPaused) return;
 
@@ -180,13 +235,13 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     // Perform gamemode specific action
     if (state.gamemode === 'cube') {
       if (state.isGrounded) {
-        state.playerYVelocity = -9.2;
+        state.playerYVelocity = -9.2 * state.gravityDirection;
         state.isGrounded = false;
         if (soundEnabled) audio.playJump();
       }
     } else if (state.gamemode === 'robot') {
       if (state.isGrounded) {
-        state.playerYVelocity = -6.6;
+        state.playerYVelocity = -6.6 * state.gravityDirection;
         state.isGrounded = false;
         state.robotJumpTimer = 14; // Allow upward thrust for 14 frames
         if (soundEnabled) audio.playJump();
@@ -338,9 +393,19 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         return;
       }
 
-      if (!isGameOver && !hasWon) {
+      if (!isGameOver && !hasWon && !state.isDying) {
         state.animationTick++;
         updatePhysics();
+      } else if (state.isDying) {
+        state.animationTick++;
+        if (multiplayerState && multiplayerState.isMultiplayer && state.spectatingUser) {
+          // Sync camera with the surviving friend!
+          const friend = otherPlayersRef.current[state.spectatingUser];
+          if (friend && !friend.isDead) {
+            state.cameraX = friend.x - state.playerX;
+            setPercentage(friend.progress || 0);
+          }
+        }
       }
 
       updateParticles();
@@ -352,6 +417,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     // UPDATE PHYSICS ENGINE
     const updatePhysics = () => {
       const state = stateRef.current;
+      const wasGrounded = state.isGrounded;
 
       // 1. Level speed calculation
       // base horizontal speed is 5.2px per frame
@@ -363,6 +429,28 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
       const progressRatio = state.cameraX / state.levelLengthPixels;
       const currentProgress = Math.min(state.cameraX >= state.levelLengthPixels ? 99 : 100, Math.floor(progressRatio * 100));
       setPercentage(currentProgress);
+
+      // Sync position to server in multiplayer mode
+      if (multiplayerState && multiplayerState.isMultiplayer && multiplayerState.socket) {
+        state.syncFrameCounter = (state.syncFrameCounter || 0) + 1;
+        if (state.syncFrameCounter % 2 === 0) { // Sync every 2 frames (~30Hz)
+          try {
+            if (multiplayerState.socket.readyState === WebSocket.OPEN) {
+              multiplayerState.socket.send(JSON.stringify({
+                type: 'player_sync',
+                x: state.cameraX + state.playerX,
+                y: state.playerY,
+                gamemode: state.gamemode,
+                isDead: state.isDying,
+                rotation: state.rotation,
+                progress: currentProgress
+              }));
+            }
+          } catch (e) {
+            console.error('Error sending player sync', e);
+          }
+        }
+      }
 
       // Win Condition check
       const elapsedMs = Date.now() - state.levelStartTime;
@@ -575,38 +663,67 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
             // Determine collision vector
             const headNormal = state.gravityDirection === 1; // standard gravity falls down onto block
 
-            if (headNormal && prevY + pSize <= elY + 6) {
-              // Landed on top of the block
-              state.playerY = elY - pSize;
-              state.playerYVelocity = 0;
-              state.isGrounded = true;
-              isCollidingWithSurface = true;
+            if (headNormal) {
+              // Landed on top of the block - highly forgiving edge-landing buffer (18px)
+              const wasAbove = prevY + pSize <= elY + 18;
+              const isFalling = state.playerYVelocity >= -0.5;
 
-              if (Math.random() < 0.4) {
-                spawnSlideSpark(state.playerX + pSize / 4, elY, skins.primaryColor);
+              if (isFalling && wasAbove) {
+                state.playerY = elY - pSize;
+                state.playerYVelocity = 0;
+                state.isGrounded = true;
+                isCollidingWithSurface = true;
+
+                if (Math.random() < 0.4) {
+                  spawnSlideSpark(state.playerX + pSize / 4, elY, skins.primaryColor);
+                }
+              } else {
+                // Hit the side or bottom of block -> Boom! Crash!
+                triggerDeath();
               }
-            } else if (!headNormal && prevY >= elY + TILE_SIZE - 6) {
-              // Inverted Gravity: Walked on bottom of block
-              state.playerY = elY + TILE_SIZE;
-              state.playerYVelocity = 0;
-              state.isGrounded = true;
-              isCollidingWithSurface = true;
             } else {
-              // Hit the side or bottom of block -> Boom! Crash!
-              triggerDeath();
+              // Inverted Gravity: Walked on bottom of block
+              const wasBelow = prevY >= elY + TILE_SIZE - 18;
+              const isRisingInverted = state.playerYVelocity <= 0.5;
+
+              if (isRisingInverted && wasBelow) {
+                state.playerY = elY + TILE_SIZE;
+                state.playerYVelocity = 0;
+                state.isGrounded = true;
+                isCollidingWithSurface = true;
+              } else {
+                triggerDeath();
+              }
             }
           }
 
           // SPIKES (Leethal spikes!)
           else if (el.type === 'spike' || el.type === 'spike_inverted' || el.type === 'spike_small') {
-            // Slightly smaller hit box to make it feel responsive and fair
-            // Mini spikes have a much more forgiving hitbox
-            const shrink = el.type === 'spike_small' ? TILE_SIZE * 0.35 : TILE_SIZE * 0.15;
+            // Highly forgiving hitboxes that prevent dying on the transparent corners of triangular spikes
+            let shrinkX = TILE_SIZE * 0.32; // 32% shrink from both sides makes the hitbox narrow (ideal for triangles)
+            let shrinkY = TILE_SIZE * 0.25; // 25% shrink from vertical tip makes it shorter
+
+            if (el.type === 'spike_small') {
+              shrinkX = TILE_SIZE * 0.42; // Very forgiving for small spikes
+              shrinkY = TILE_SIZE * 0.45;
+            }
+
+            // AABB with custom horizontal and vertical shrink margins
+            const playerLeft = px + shrinkX;
+            const playerRight = px + pSize - shrinkX;
+            const playerTop = py + (el.type === 'spike_inverted' ? shrinkY : shrinkY * 0.2);
+            const playerBottom = py + pSize - (el.type === 'spike_inverted' ? shrinkY * 0.2 : shrinkY);
+
+            const obstacleLeft = elX + shrinkX;
+            const obstacleRight = elX + TILE_SIZE - shrinkX;
+            const obstacleTop = elY + (el.type === 'spike_inverted' ? 0 : shrinkY);
+            const obstacleBottom = elY + TILE_SIZE - (el.type === 'spike_inverted' ? shrinkY : 0);
+
             if (
-              px + pSize - shrink > elX &&
-              px + shrink < elX + TILE_SIZE &&
-              py + pSize - shrink > elY &&
-              py + shrink < elY + TILE_SIZE
+              playerRight > obstacleLeft &&
+              playerLeft < obstacleRight &&
+              playerBottom > obstacleTop &&
+              playerTop < obstacleBottom
             ) {
               triggerDeath();
             }
@@ -682,7 +799,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
                 state.isGrounded = false;
                 const color = el.type === 'pad_red' ? '#FF0000' : '#FFFF00';
                 spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, color);
-                if (soundEnabled) audio.playJump();
+                if (soundEnabled) audio.playPad();
               }
             }
           }
@@ -722,7 +839,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
 
               // Spawn flash trail
               spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, '#00FFFF');
-              if (soundEnabled) audio.playGravitySwap();
+              if (soundEnabled) audio.playSpeedGate();
             }
           }
         }
@@ -760,13 +877,36 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
           if (soundEnabled) audio.playJump();
         }
       }
+
+      // Landing sound check (if player transitioned from airborne to grounded)
+      if (!wasGrounded && state.isGrounded) {
+        if (soundEnabled) audio.playLand();
+      }
     };
 
     // TRIGGER DEATH (Boom!)
     const triggerDeath = () => {
       const state = stateRef.current;
-      setIsGameOver(true);
+      if (state.isDying) return;
+      state.isDying = true;
       state.screenShake = 14;
+
+      // Sync death with server in multiplayer mode
+      if (multiplayerState && multiplayerState.isMultiplayer && multiplayerState.socket) {
+        try {
+          if (multiplayerState.socket.readyState === WebSocket.OPEN) {
+            multiplayerState.socket.send(JSON.stringify({ type: 'player_death' }));
+          }
+        } catch (e) {
+          console.error(e);
+        }
+
+        // Set who we should spectate: the first alive player
+        const aliveFriend = Object.keys(otherPlayersRef.current).find(uName => 
+          uName !== username && !otherPlayersRef.current[uName].isDead
+        );
+        state.spectatingUser = aliveFriend || null;
+      }
 
       const currentProgress = Math.min(100, Math.floor((state.cameraX / state.levelLengthPixels) * 100));
       if (onProgress) {
@@ -830,11 +970,25 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         audio.playDeath();
         audio.stopMusic();
       }
+
+      // Show Game Over UI after the cube shattering finishes playing
+      setTimeout(() => {
+        if (state.isDying) {
+          if (multiplayerState && multiplayerState.isMultiplayer) {
+            // In multiplayer, don't show the standard overlay, remain in spectating
+          } else {
+            setIsGameOver(true);
+          }
+        }
+      }, 1000);
     };
 
     // Particles animations
     const spawnSlideSpark = (x: number, y: number, color: string) => {
       const state = stateRef.current;
+      if (soundEnabled && Math.random() < 0.12) {
+        audio.playSlide();
+      }
       state.particles.push({
         x,
         y: y - 2 + Math.random() * 4,
@@ -930,12 +1084,15 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     }
 
     // Clear background
-    ctx.fillStyle = '#6D28D9'; // Deep violet purple background (classic GD)
+    const activeThemeId = level.theme || 'purple';
+    const activeTheme = LEVEL_THEMES.find(t => t.id === activeThemeId) || LEVEL_THEMES[0];
+
+    ctx.fillStyle = activeTheme.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Parallax scrolling mountains/pyramids in the background
     ctx.save();
-    ctx.fillStyle = '#5B21B6'; // slightly darker purple
+    ctx.fillStyle = activeTheme.mountain;
     const mountainScale = 0.2; // scroll slower
     for (let i = 0; i < 15; i++) {
       const mx = (i * 280) - (state.cameraX * mountainScale) % 280;
@@ -949,17 +1106,17 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     ctx.restore();
 
     // Draw ceiling background glow grid
-    ctx.fillStyle = '#4C1D95';
+    ctx.fillStyle = activeTheme.skyGlow;
     ctx.fillRect(0, 0, canvas.width, 80);
-    ctx.fillStyle = '#10B981'; // Green ceiling highlight line
+    ctx.fillStyle = activeTheme.neon; // Theme neon line
     ctx.fillRect(0, 78, canvas.width, 2);
 
     // 2. Draw static ground mesh & scrolling floor grid
     ctx.fillStyle = '#1F2937'; // dark charcoal ground
     ctx.fillRect(0, GROUND_Y_PIXELS, canvas.width, canvas.height - GROUND_Y_PIXELS);
 
-    // Green neon ground border line
-    ctx.fillStyle = '#10B981';
+    // Neon ground border line
+    ctx.fillStyle = activeTheme.neon;
     ctx.fillRect(0, GROUND_Y_PIXELS, canvas.width, 4);
 
     // Grid Lines scrolling backwards
@@ -1354,7 +1511,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     ctx.globalAlpha = 1.0; // reset
 
     // 5.5. Draw Shards (Player fracturing on death)
-    if (isGameOver && state.shards && state.shards.length > 0) {
+    if ((isGameOver || state.isDying) && state.shards && state.shards.length > 0) {
       state.shards.forEach(shard => {
         ctx.save();
         ctx.translate(shard.x, shard.y);
@@ -1412,7 +1569,7 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
     }
 
     // 6. Draw Player Character
-    if (!isGameOver) {
+    if (!isGameOver && !state.isDying) {
       let pSize = state.playerSize;
       
       // Shrink size on entering portal
@@ -1445,8 +1602,152 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
       }
     }
 
+    // Draw Other Multiplayer Players
+    if (multiplayerState && multiplayerState.isMultiplayer) {
+      Object.keys(otherPlayersRef.current).forEach(uName => {
+        if (uName === username) return; // Don't draw ourselves twice
+        const otherP = otherPlayersRef.current[uName];
+        if (!otherP || otherP.isDead) return;
+
+        // Compute their on-screen coordinates
+        const otherPx = otherP.x - state.cameraX;
+        const otherPy = otherP.y;
+
+        // Draw their cube/wave/robot/ball
+        ctx.save();
+        const otherPrimaryColor = otherP.skins?.primaryColor || '#00FFFF';
+        const otherSecondaryColor = otherP.skins?.secondaryColor || '#FF00FF';
+        const otherCube = otherP.skins?.cube || '0';
+        const otherRotation = otherP.rotation || 0;
+
+        ctx.globalAlpha = 0.65; // Draw with a slight transparency to differentiate from ourselves
+        
+        if (otherP.gamemode === 'cube') {
+          drawCube(ctx, otherPx + state.playerSize / 2, otherPy + state.playerSize / 2, state.playerSize, otherCube, otherPrimaryColor, otherSecondaryColor, otherRotation);
+        } else if (otherP.gamemode === 'wave') {
+          drawWave(ctx, otherPx + state.playerSize / 2, otherPy + state.playerSize / 2, state.playerSize, otherP.skins?.wave || '0', otherPrimaryColor, otherSecondaryColor, otherRotation);
+        } else if (otherP.gamemode === 'robot') {
+          drawRobot(ctx, otherPx + state.playerSize / 2, otherPy + state.playerSize / 2, state.playerSize, otherP.skins?.robot || '0', otherPrimaryColor, otherSecondaryColor, false, state.animationTick);
+        } else if (otherP.gamemode === 'ball') {
+          drawBall(ctx, otherPx + state.playerSize / 2, otherPy + state.playerSize / 2, state.playerSize, otherP.skins?.ball || '0', otherPrimaryColor, otherSecondaryColor, otherRotation);
+        }
+
+        ctx.globalAlpha = 1.0;
+
+        // Draw their floating name tag above their cube
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 9px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 4;
+        ctx.fillText(otherP.username.toUpperCase(), otherPx + state.playerSize / 2, otherPy - 8);
+        ctx.shadowBlur = 0; // reset
+
+        ctx.restore();
+      });
+    }
+
     ctx.restore();
   };
+
+  // Listen to incoming WebSocket sync messages for multiplayer
+  useEffect(() => {
+    if (!multiplayerState || !multiplayerState.isMultiplayer || !multiplayerState.socket) return;
+
+    const socket = multiplayerState.socket;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'sync_broadcast') {
+          if (data.username === username) return;
+
+          otherPlayersRef.current[data.username] = {
+            username: data.username,
+            skins: data.skins || {},
+            x: data.x,
+            y: data.y,
+            gamemode: data.gamemode,
+            isDead: !!data.isDead,
+            rotation: data.rotation || 0,
+            progress: data.progress || 0
+          };
+
+          const state = stateRef.current;
+          if (state.spectatingUser === data.username && !data.isDead) {
+            state.cameraX = data.x - state.playerX;
+          }
+        } else if (data.type === 'player_died') {
+          if (data.username === username) return;
+          if (otherPlayersRef.current[data.username]) {
+            otherPlayersRef.current[data.username].isDead = true;
+          }
+
+          const state = stateRef.current;
+          if (state.spectatingUser === data.username) {
+            const aliveFriend = Object.keys(otherPlayersRef.current).find(uName => 
+              uName !== username && !otherPlayersRef.current[uName].isDead
+            );
+            state.spectatingUser = aliveFriend || null;
+          }
+        } else if (data.type === 'game_restart') {
+          const state = stateRef.current;
+          state.spectatingUser = null;
+          state.isDying = false;
+          Object.keys(otherPlayersRef.current).forEach(u => {
+            if (otherPlayersRef.current[u]) {
+              otherPlayersRef.current[u].isDead = false;
+              otherPlayersRef.current[u].x = 0;
+              otherPlayersRef.current[u].y = 0;
+            }
+          });
+          restartLevel(false);
+        } else if (data.type === 'room_state') {
+          data.room.players.forEach((p: any) => {
+            if (p.username === username) return;
+            if (!otherPlayersRef.current[p.username]) {
+              otherPlayersRef.current[p.username] = {
+                username: p.username,
+                skins: p.skins || {},
+                x: 0,
+                y: 0,
+                gamemode: 'cube',
+                isDead: false,
+                progress: 0
+              };
+            } else {
+              otherPlayersRef.current[p.username].skins = p.skins || {};
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Error handling WS sync message in GameCanvas', e);
+      }
+    };
+
+    socket.addEventListener('message', handleMessage);
+    
+    // Seed current players from state
+    if (multiplayerState.players) {
+      multiplayerState.players.forEach((p: any) => {
+        if (p.username === username) return;
+        otherPlayersRef.current[p.username] = {
+          username: p.username,
+          skins: p.skins || {},
+          x: 0,
+          y: 0,
+          gamemode: 'cube',
+          isDead: false,
+          progress: 0
+        };
+      });
+    }
+
+    return () => {
+      socket.removeEventListener('message', handleMessage);
+    };
+  }, [multiplayerState, username]);
 
   return (
     <div className="relative flex flex-col w-full h-full bg-slate-950 rounded-xl overflow-hidden shadow-2xl border border-slate-800" ref={containerRef}>
@@ -1530,6 +1831,16 @@ export default function GameCanvas({ level, skins, onExit, isPlaytesting = false
         {stateRef.current.gamemode === 'ball' && 'Rueda: Toca para invertir la gravedad'}
         {stateRef.current.gamemode === 'wave' && 'Wave: Mantén pulsado para subir diagonal, suelta para bajar'}
       </div>
+
+      {/* SPECTATING HUD OVERLAY */}
+      {multiplayerState?.isMultiplayer && stateRef.current.spectatingUser && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-slate-900/95 border-2 border-cyan-400 px-6 py-2 rounded-full text-white z-30 font-mono flex items-center gap-3 shadow-2xl animate-pulse">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <div className="text-[10px] uppercase tracking-widest font-black">
+            👀 ESPECTANDO JUGADOR: <span className="text-yellow-400">{stateRef.current.spectatingUser}</span>
+          </div>
+        </div>
+      )}
 
       {/* GAME OVER DIALOG OVERLAY */}
       {isGameOver && (

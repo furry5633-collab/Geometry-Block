@@ -2,9 +2,12 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'shared_levels.json');
+const USERS_FILE = path.join(process.cwd(), 'registered_users.json');
+const FRIENDSHIPS_FILE = path.join(process.cwd(), 'friendships.json');
 
 // Preloaded community levels to seed the online server if empty
 const INITIAL_ONLINE_LEVELS = [
@@ -111,9 +114,182 @@ function saveLevelsToDisk(levels: any[]) {
   }
 }
 
+// Helper to load registered users from disk
+function loadUsers(): any[] {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error reading registered_users.json', e);
+  }
+  return [];
+}
+
+// Helper to save registered users to disk
+function saveUsers(users: any[]) {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error writing to registered_users.json', e);
+  }
+}
+
+// Helper to load friendships from disk
+function loadFriendships(): any[] {
+  try {
+    if (fs.existsSync(FRIENDSHIPS_FILE)) {
+      const raw = fs.readFileSync(FRIENDSHIPS_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error reading friendships.json', e);
+  }
+  return [];
+}
+
+// Helper to save friendships to disk
+function saveFriendships(friendships: any[]) {
+  try {
+    fs.writeFileSync(FRIENDSHIPS_FILE, JSON.stringify(friendships, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error writing to friendships.json', e);
+  }
+}
+
 async function start() {
   const app = express();
   app.use(express.json());
+
+  // Players APIs
+  app.get('/api/players', (req, res) => {
+    res.json(loadUsers());
+  });
+
+  app.post('/api/players/register', (req, res) => {
+    const { username, skins, stats, createdLevels } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Missing username' });
+    }
+    const users = loadUsers();
+    const existingIndex = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
+    
+    const userPayload = {
+      username,
+      skins: skins || {},
+      stats: stats || {},
+      createdLevels: createdLevels || [],
+      lastActive: Date.now()
+    };
+
+    if (existingIndex >= 0) {
+      users[existingIndex] = {
+        ...users[existingIndex],
+        ...userPayload,
+        stats: {
+          ...users[existingIndex].stats,
+          ...stats
+        }
+      };
+    } else {
+      users.push(userPayload);
+    }
+
+    saveUsers(users);
+    res.status(200).json(userPayload);
+  });
+
+  // Friendships APIs
+  app.post('/api/friends/request', (req, res) => {
+    const { from, to } = req.body;
+    if (!from || !to) {
+      return res.status(400).json({ error: 'Missing from or to parameters' });
+    }
+    if (from.toLowerCase() === to.toLowerCase()) {
+      return res.status(400).json({ error: 'No te puedes enviar solicitud a ti mismo' });
+    }
+
+    const friendships = loadFriendships();
+    const existing = friendships.find((f: any) => 
+      (f.user1.toLowerCase() === from.toLowerCase() && f.user2.toLowerCase() === to.toLowerCase()) ||
+      (f.user1.toLowerCase() === to.toLowerCase() && f.user2.toLowerCase() === from.toLowerCase())
+    );
+
+    if (existing) {
+      return res.status(400).json({ error: 'Ya existe una solicitud o amistad activa entre estos jugadores' });
+    }
+
+    friendships.push({
+      user1: from,
+      user2: to,
+      status: 'pending',
+      sender: from,
+      timestamp: Date.now()
+    });
+
+    saveFriendships(friendships);
+    res.status(200).json({ success: true });
+  });
+
+  app.post('/api/friends/respond', (req, res) => {
+    const { from, to, action } = req.body; // from is the sender of the request, to is the replier
+    if (!from || !to || !action) {
+      return res.status(400).json({ error: 'Missing parameters' });
+    }
+
+    let friendships = loadFriendships();
+    const idx = friendships.findIndex((f: any) => 
+      f.status === 'pending' &&
+      ((f.user1.toLowerCase() === from.toLowerCase() && f.user2.toLowerCase() === to.toLowerCase()) ||
+       (f.user1.toLowerCase() === to.toLowerCase() && f.user2.toLowerCase() === from.toLowerCase()))
+    );
+
+    if (idx < 0) {
+      return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
+    }
+
+    if (action === 'accept') {
+      friendships[idx].status = 'accepted';
+    } else {
+      friendships.splice(idx, 1);
+    }
+
+    saveFriendships(friendships);
+    res.status(200).json({ success: true });
+  });
+
+  app.get('/api/friends/requests', (req, res) => {
+    const username = req.query.username as string;
+    if (!username) {
+      return res.status(400).json({ error: 'Missing username query param' });
+    }
+    const friendships = loadFriendships();
+    const pending = friendships.filter((f: any) => 
+      f.status === 'pending' && 
+      (f.user1.toLowerCase() === username.toLowerCase() || f.user2.toLowerCase() === username.toLowerCase())
+    );
+    res.json(pending);
+  });
+
+  app.get('/api/friends/list', (req, res) => {
+    const username = req.query.username as string;
+    if (!username) {
+      return res.status(400).json({ error: 'Missing username query param' });
+    }
+    const friendships = loadFriendships();
+    const accepted = friendships.filter((f: any) => 
+      f.status === 'accepted' && 
+      (f.user1.toLowerCase() === username.toLowerCase() || f.user2.toLowerCase() === username.toLowerCase())
+    );
+
+    const friendsList = accepted.map((f: any) => {
+      const friendName = f.user1.toLowerCase() === username.toLowerCase() ? f.user2 : f.user1;
+      return friendName;
+    });
+
+    res.json(friendsList);
+  });
 
   // Initialize shared levels cache
   let sharedLevels = loadLevelsFromDisk();
@@ -252,8 +428,297 @@ async function start() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] Running on http://localhost:${PORT}`);
+  });
+
+  const wss = new WebSocketServer({ server });
+
+  // Store active online players: username -> WebSocket
+  const onlineSockets = new Map<string, WebSocket>();
+
+  // Lobby type definitions
+  interface WSPlayer {
+    username: string;
+    skins: any;
+    stats: any;
+    x: number;
+    y: number;
+    gamemode: string;
+    isDead: boolean;
+    rotation?: number;
+    progress?: number;
+  }
+
+  interface WSLobby {
+    id: string;
+    leader: string;
+    players: WSPlayer[];
+    selectedLevel: any | null;
+    isPlaying: boolean;
+  }
+
+  const lobbies = new Map<string, WSLobby>();
+
+  function broadcastToRoom(lobbyId: string, message: any) {
+    const lobby = lobbies.get(lobbyId);
+    if (!lobby) return;
+    const payload = JSON.stringify(message);
+    lobby.players.forEach(p => {
+      const socket = onlineSockets.get(p.username);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+      }
+    });
+  }
+
+  wss.on('connection', (ws, req) => {
+    // Parse username from query params: /?username=MyPlayer
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const username = urlObj.searchParams.get('username');
+
+    if (!username) {
+      ws.close();
+      return;
+    }
+
+    // Register active connection
+    onlineSockets.set(username, ws);
+    console.log(`[WS] ${username} connected.`);
+
+    // Send updated list of players online to everyone when someone connects
+    const notifyPresence = () => {
+      const onlineList = Array.from(onlineSockets.keys());
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'presence_update', onlineUsers: onlineList }));
+        }
+      });
+    };
+    notifyPresence();
+
+    // Current lobby ID of this connection
+    let currentLobbyId: string | null = null;
+
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        
+        switch (data.type) {
+          case 'create_room': {
+            const { skins, stats } = data;
+            const roomId = `room_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+            const newLobby: WSLobby = {
+              id: roomId,
+              leader: username,
+              players: [{
+                username,
+                skins,
+                stats,
+                x: 0,
+                y: 0,
+                gamemode: 'cube',
+                isDead: false,
+                progress: 0
+              }],
+              selectedLevel: null,
+              isPlaying: false
+            };
+            lobbies.set(roomId, newLobby);
+            currentLobbyId = roomId;
+            ws.send(JSON.stringify({ type: 'room_created', room: newLobby }));
+            break;
+          }
+
+          case 'join_room': {
+            const { roomId, skins, stats } = data;
+            const lobby = lobbies.get(roomId);
+            if (!lobby) {
+              ws.send(JSON.stringify({ type: 'error', message: 'La sala no existe' }));
+              return;
+            }
+            if (lobby.isPlaying) {
+              ws.send(JSON.stringify({ type: 'error', message: 'La partida ya ha comenzado' }));
+              return;
+            }
+            
+            // Remove from old room if any
+            if (currentLobbyId && lobbies.has(currentLobbyId)) {
+              handleUserLeave(username, currentLobbyId);
+            }
+
+            // Check if player already in lobby
+            const existingIdx = lobby.players.findIndex(p => p.username === username);
+            if (existingIdx >= 0) {
+              lobby.players[existingIdx] = {
+                username,
+                skins,
+                stats,
+                x: 0,
+                y: 0,
+                gamemode: 'cube',
+                isDead: false,
+                progress: 0
+              };
+            } else {
+              lobby.players.push({
+                username,
+                skins,
+                stats,
+                x: 0,
+                y: 0,
+                gamemode: 'cube',
+                isDead: false,
+                progress: 0
+              });
+            }
+
+            currentLobbyId = roomId;
+            broadcastToRoom(roomId, { type: 'room_state', room: lobby });
+            break;
+          }
+
+          case 'invite': {
+            const { friendUsername, roomId } = data;
+            const targetSocket = onlineSockets.get(friendUsername);
+            if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+              targetSocket.send(JSON.stringify({
+                type: 'incoming_invite',
+                from: username,
+                roomId
+              }));
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: `${friendUsername} no está conectado.` }));
+            }
+            break;
+          }
+
+          case 'select_level': {
+            if (!currentLobbyId) return;
+            const lobby = lobbies.get(currentLobbyId);
+            if (!lobby || lobby.leader !== username) return;
+
+            lobby.selectedLevel = data.level;
+            broadcastToRoom(currentLobbyId, { type: 'room_state', room: lobby });
+            break;
+          }
+
+          case 'start_game': {
+            if (!currentLobbyId) return;
+            const lobby = lobbies.get(currentLobbyId);
+            if (!lobby || lobby.leader !== username) return;
+
+            lobby.isPlaying = true;
+            lobby.players.forEach(p => {
+              p.isDead = false;
+              p.x = 0;
+              p.y = 0;
+              p.progress = 0;
+            });
+            broadcastToRoom(currentLobbyId, { type: 'game_started' });
+            break;
+          }
+
+          case 'player_sync': {
+            if (!currentLobbyId) return;
+            const lobby = lobbies.get(currentLobbyId);
+            if (!lobby) return;
+
+            const player = lobby.players.find(p => p.username === username);
+            if (player) {
+              player.x = data.x;
+              player.y = data.y;
+              player.gamemode = data.gamemode;
+              player.isDead = !!data.isDead;
+              player.rotation = data.rotation;
+              player.progress = data.progress;
+            }
+
+            // Broadcast only client movements to others to save bandwidth
+            broadcastToRoom(currentLobbyId, {
+              type: 'sync_broadcast',
+              username,
+              x: data.x,
+              y: data.y,
+              gamemode: data.gamemode,
+              isDead: data.isDead,
+              rotation: data.rotation,
+              progress: data.progress
+            });
+            break;
+          }
+
+          case 'player_death': {
+            if (!currentLobbyId) return;
+            const lobby = lobbies.get(currentLobbyId);
+            if (!lobby) return;
+
+            const player = lobby.players.find(p => p.username === username);
+            if (player) {
+              player.isDead = true;
+            }
+
+            broadcastToRoom(currentLobbyId, {
+              type: 'player_died',
+              username
+            });
+
+            // If ALL players in the room are now dead, trigger auto-restart
+            const allDead = lobby.players.every(p => p.isDead);
+            if (allDead) {
+              setTimeout(() => {
+                const updatedLobby = lobbies.get(currentLobbyId!);
+                if (updatedLobby && updatedLobby.isPlaying) {
+                  updatedLobby.players.forEach(p => {
+                    p.isDead = false;
+                    p.x = 0;
+                    p.y = 0;
+                    p.progress = 0;
+                  });
+                  broadcastToRoom(currentLobbyId!, { type: 'game_restart' });
+                }
+              }, 2000);
+            }
+            break;
+          }
+
+          case 'leave_room': {
+            if (!currentLobbyId) return;
+            handleUserLeave(username, currentLobbyId);
+            currentLobbyId = null;
+            break;
+          }
+        }
+
+      } catch (e) {
+        console.error('[WS Error processing message]', e);
+      }
+    });
+
+    function handleUserLeave(userToLeave: string, roomId: string) {
+      const lobby = lobbies.get(roomId);
+      if (!lobby) return;
+
+      lobby.players = lobby.players.filter(p => p.username !== userToLeave);
+      
+      if (lobby.players.length === 0) {
+        lobbies.delete(roomId);
+      } else {
+        if (lobby.leader === userToLeave) {
+          lobby.leader = lobby.players[0].username;
+        }
+        broadcastToRoom(roomId, { type: 'room_state', room: lobby });
+      }
+    }
+
+    ws.on('close', () => {
+      onlineSockets.delete(username);
+      console.log(`[WS] ${username} disconnected.`);
+      notifyPresence();
+      if (currentLobbyId) {
+        handleUserLeave(username, currentLobbyId);
+      }
+    });
   });
 }
 

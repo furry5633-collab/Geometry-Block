@@ -40,24 +40,32 @@ interface OnlineLevelBrowserProps {
 
 // Draw the iconic GD Difficulty Faces in JSX
 export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: number }) {
+  const d = String(diff || 'na').toLowerCase();
+
   const getStyles = () => {
-    switch (diff) {
-      case 'na':
-        return { bg: 'bg-slate-500', border: 'border-slate-700', text: 'N/A' };
-      case 'easy':
-        return { bg: 'bg-cyan-500', border: 'border-cyan-700', text: 'Easy' };
-      case 'normal':
-        return { bg: 'bg-emerald-500', border: 'border-emerald-700', text: 'Normal' };
-      case 'hard':
-        return { bg: 'bg-yellow-500', border: 'border-yellow-700', text: 'Hard' };
-      case 'harder':
-        return { bg: 'bg-orange-500', border: 'border-orange-700', text: 'Harder' };
-      case 'insane':
-        return { bg: 'bg-purple-600', border: 'border-purple-800', text: 'Insane' };
-      case 'demon':
-        return { bg: 'bg-red-600', border: 'border-red-800', text: 'Demon' };
-      case 'auto':
-        return { bg: 'bg-pink-500', border: 'border-pink-700', text: 'Auto' };
+    const fallback = { bg: 'bg-slate-500', border: 'border-slate-700', text: 'N/A' };
+    try {
+      switch (d) {
+        case 'easy':
+          return { bg: 'bg-cyan-500', border: 'border-cyan-700', text: 'Easy' };
+        case 'normal':
+          return { bg: 'bg-emerald-500', border: 'border-emerald-700', text: 'Normal' };
+        case 'hard':
+          return { bg: 'bg-yellow-500', border: 'border-yellow-700', text: 'Hard' };
+        case 'harder':
+          return { bg: 'bg-orange-500', border: 'border-orange-700', text: 'Harder' };
+        case 'insane':
+          return { bg: 'bg-purple-600', border: 'border-purple-800', text: 'Insane' };
+        case 'demon':
+          return { bg: 'bg-red-600', border: 'border-red-800', text: 'Demon' };
+        case 'auto':
+          return { bg: 'bg-pink-500', border: 'border-pink-700', text: 'Auto' };
+        case 'na':
+        default:
+          return fallback;
+      }
+    } catch (e) {
+      return fallback;
     }
   };
 
@@ -65,7 +73,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
 
   return (
     <div className={`relative flex items-center justify-center rounded-full border-2 ${bg} ${border} shadow-md select-none`} style={{ width: `${size * 4}px`, height: `${size * 4}px` }}>
-      {diff === 'na' && (
+      {d === 'na' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-1.5">
             <div className="w-1.5 h-1.5 bg-black rounded-full" />
@@ -74,7 +82,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-4 h-0.5 bg-black mt-1" />
         </div>
       )}
-      {diff === 'easy' && (
+      {d === 'easy' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-2">
             <div className="w-1.5 h-1.5 bg-black rounded-full" />
@@ -83,7 +91,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-5 h-2.5 border-b-2 border-black rounded-b-full mt-0.5" />
         </div>
       )}
-      {diff === 'normal' && (
+      {d === 'normal' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-2.5">
             <div className="w-2 h-2 bg-black rounded-full" />
@@ -92,7 +100,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-6 h-3 border-b-2 border-black rounded-b-full mt-0.5" />
         </div>
       )}
-      {diff === 'hard' && (
+      {d === 'hard' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-2">
             <div className="w-2 h-2 bg-black rounded-full" />
@@ -101,7 +109,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-6 h-1.5 bg-black mt-1 rounded-sm" />
         </div>
       )}
-      {diff === 'harder' && (
+      {d === 'harder' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-1">
             <div className="w-2 h-2 bg-black rounded-full transform -rotate-12" />
@@ -110,11 +118,11 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-5 h-2 border-t-2 border-black rounded-t-full mt-1" />
         </div>
       )}
-      {diff === 'insane' && (
+      {d === 'insane' && (
         <div className="flex flex-col items-center justify-center">
           <div className="flex gap-2 -mt-1">
             {/* Angry eyebrows */}
-            <div className="text-[9px] text-black font-extrabold rotate-12 leading-none">\</div>
+            <div className="text-[9px] text-black font-extrabold rotate-12 leading-none">\\</div>
             <div className="text-[9px] text-black font-extrabold -rotate-12 leading-none">/</div>
           </div>
           <div className="flex gap-1.5 -mt-1">
@@ -124,7 +132,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           <div className="w-5 h-1.5 bg-black mt-1" />
         </div>
       )}
-      {diff === 'demon' && (
+      {d === 'demon' && (
         <div className="relative flex flex-col items-center justify-center w-full h-full">
           {/* Horns */}
           <div className="absolute -top-1.5 -left-1 text-[12px] text-black font-black rotate-45 select-none">▲</div>
@@ -141,7 +149,7 @@ export function DifficultyFace({ diff, size = 10 }: { diff: Difficulty; size?: n
           </div>
         </div>
       )}
-      {diff === 'auto' && (
+      {d === 'auto' && (
         <div className="flex flex-col items-center justify-center">
           {/* Metal robotic visor */}
           <div className="w-7 h-2.5 bg-slate-800 border border-black rounded-sm flex items-center justify-center">

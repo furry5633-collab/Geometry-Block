@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Level, PlayerSkins } from './types';
+import { Level, PlayerSkins, UserProfile } from './types';
 import {
   DEFAULT_LEVELS,
   getCustomLevels,
@@ -15,10 +15,12 @@ import {
   uploadCustomLevelToOnline,
   getLevelProgress
 } from './levels';
+import { audio } from './audio';
 import GameCanvas from './components/GameCanvas';
 import SkinCustomizer from './components/SkinCustomizer';
 import LevelBuilder from './components/LevelBuilder';
 import OnlineLevelBrowser from './components/OnlineLevelBrowser';
+import MultiplayerMenu from './components/MultiplayerMenu';
 import {
   Sparkles,
   Play as PlayIcon,
@@ -35,7 +37,8 @@ import {
   CloudUpload,
   Trophy,
   Gem,
-  Coins
+  Coins,
+  Users
 } from 'lucide-react';
 
 const DEFAULT_SKINS: PlayerSkins = {
@@ -47,19 +50,44 @@ const DEFAULT_SKINS: PlayerSkins = {
   secondaryColor: '#FF00FF', // pink
 };
 
-type ViewState = 'menu' | 'levels' | 'customizer' | 'editor' | 'playing' | 'online_browser';
-
-interface UserProfile {
-  username: string;
-  stars: number;
-  orbs: number;
-  diamonds: number;
-  completedCount: number;
-}
+type ViewState = 'menu' | 'levels' | 'customizer' | 'editor' | 'playing' | 'online_browser' | 'multiplayer';
 
 export default function App() {
-  const [view, setViewState] = useState<ViewState>('menu');
+  const [view, setViewStateInternal] = useState<ViewState>('menu');
+  
+  const setViewState = (state: ViewState) => {
+    audio.playClick();
+    setViewStateInternal(state);
+  };
+
   const [cameFromEditor, setCameFromEditor] = useState<boolean>(false);
+
+  // Multiplayer Game states
+  const [multiplayerState, setMultiplayerState] = useState<{
+    isMultiplayer: boolean;
+    roomId: string | null;
+    socket: WebSocket | null;
+    players: any[];
+    isLeader: boolean;
+  }>({
+    isMultiplayer: false,
+    roomId: null,
+    socket: null,
+    players: [],
+    isLeader: false
+  });
+
+  const handleStartMultiplayerGame = (level: Level, wsSocket: WebSocket, roomId: string, players: any[], isLeader: boolean) => {
+    setSelectedLevel(level);
+    setMultiplayerState({
+      isMultiplayer: true,
+      roomId,
+      socket: wsSocket,
+      players,
+      isLeader
+    });
+    setViewStateInternal('playing'); // directly transition into gameplay without clicking sound
+  };
   const [skins, setSkins] = useState<PlayerSkins>(() => {
     try {
       const data = localStorage.getItem('geometry_dash_skins');
@@ -269,6 +297,28 @@ export default function App() {
     setCustomLevels(getCustomLevels());
   }, [view]);
 
+  // Synchronize player profile with the server
+  useEffect(() => {
+    const registerPlayerOnServer = async () => {
+      if (!profile || !profile.username) return;
+      try {
+        await fetch('/api/players/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: profile.username,
+            skins,
+            stats: profile,
+            createdLevels: customLevels.map(lvl => ({ id: lvl.id, name: lvl.name }))
+          })
+        });
+      } catch (e) {
+        console.warn('Could not sync player profile with server:', e);
+      }
+    };
+    registerPlayerOnServer();
+  }, [profile, skins, customLevels]);
+
   // Check the daily chest cooldown on mount and every second
   useEffect(() => {
     const checkCooldown = () => {
@@ -472,7 +522,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-screen h-screen bg-slate-950 text-white font-sans overflow-hidden flex items-center justify-center p-0 select-none">
+    <div className="relative bg-slate-950 text-white font-sans overflow-hidden flex items-center justify-center p-0 select-none" style={{ height: '100dvh', width: '100dvw' }}>
       <AnimatePresence mode="wait">
         
         {/* 1. VIEW ROUTER: GAMEPLAY CANVAS ACTIVE */}
@@ -481,15 +531,27 @@ export default function App() {
             key="playing"
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.04 }}
-            transition={{ duration: 0.28, ease: 'easeInOut' }}
+            exit={{ opacity: 0, scale: 1.01 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className="w-full h-full flex flex-col"
           >
             <GameCanvas
               level={selectedLevel}
               skins={skins}
+              multiplayerState={multiplayerState}
+              username={profile.username}
               onExit={() => {
-                if (cameFromEditor) {
+                if (multiplayerState.isMultiplayer) {
+                  // Reset multiplayer gameplay states and return to multiplayer screen
+                  setMultiplayerState({
+                    isMultiplayer: false,
+                    roomId: null,
+                    socket: null,
+                    players: [],
+                    isLeader: false
+                  });
+                  setViewState('multiplayer');
+                } else if (cameFromEditor) {
                   setViewState('editor');
                   setCameFromEditor(false);
                 } else {
@@ -507,8 +569,8 @@ export default function App() {
             key="customizer"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            exit={{ opacity: 0, y: -5 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className="w-full h-full"
           >
             <SkinCustomizer
@@ -527,8 +589,8 @@ export default function App() {
             key="editor"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            exit={{ opacity: 0, scale: 0.99 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className="w-full h-full"
           >
             <LevelBuilder
@@ -549,8 +611,8 @@ export default function App() {
             key="online_browser"
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className="w-full h-full"
           >
             <OnlineLevelBrowser
@@ -562,14 +624,35 @@ export default function App() {
           </motion.div>
         )}
 
+        {/* 4.5. VIEW ROUTER: ONLINE MULTIPLAYER MODE */}
+        {view === 'multiplayer' && (
+          <motion.div
+            key="multiplayer"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.02 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            className="w-full h-full"
+          >
+            <MultiplayerMenu
+              profile={profile}
+              skins={skins}
+              onBack={() => setViewState('menu')}
+              onStartMultiplayerGame={handleStartMultiplayerGame}
+              customLevels={customLevels}
+              officialLevels={DEFAULT_LEVELS}
+            />
+          </motion.div>
+        )}
+
         {/* 5. VIEW ROUTER: LEVEL SELECT CAROUSEL ACTIVE */}
         {view === 'levels' && (
           <motion.div
             key="levels"
             initial={{ opacity: 0, scale: 1.05 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.28, ease: 'easeInOut' }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className={`w-full h-full relative flex flex-col justify-between select-none overflow-hidden ${levelSelectTab === 'official' ? 'bg-[#0024f0]' : 'bg-slate-900'} p-4 sm:p-6 pb-2 sm:pb-4`}
           >
           
@@ -999,8 +1082,8 @@ export default function App() {
             key="menu"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            exit={{ opacity: 0, y: 5 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             className="w-full h-full bg-purple-950 relative flex flex-col justify-between p-8 select-none"
           >
           
@@ -1116,6 +1199,26 @@ export default function App() {
               </div>
             </button>
 
+            {/* BUTTON: ONLINE MULTIPLAYER (Stunning orange-red center button!) */}
+            <button
+              onClick={() => setViewState('multiplayer')}
+              className="w-24 h-24 sm:w-28 sm:h-28 bg-gradient-to-b from-orange-500 to-red-600 border-[4px] border-black rounded-3xl flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-200 cursor-pointer group relative overflow-hidden"
+              style={{
+                boxShadow: '0 8px 0 #000000, 0 15px 20px rgba(0,0,0,0.5)',
+              }}
+              title="Modo Multijugador Online (Jugar con Amigos)"
+            >
+              <div className="w-14 h-14 bg-yellow-400 border-[2.5px] border-black rounded-2xl flex items-center justify-center shadow-inner relative overflow-hidden group-hover:rotate-6 transition">
+                <Users className="w-7 h-7 text-black stroke-[2.5]" />
+                <div className="absolute inset-0 bg-white/25 -translate-y-full rotate-45 group-hover:translate-y-full transition-transform duration-1000" />
+              </div>
+              {/* Pulsing notification circle badge */}
+              <span className="absolute top-2 right-2 flex h-3.5 w-3.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cyan-500"></span>
+              </span>
+            </button>
+
             {/* BUTTON 3: ONLINE LEVEL BROWSER (Center-right, also large!) */}
             <button
               onClick={() => setViewState('online_browser')}
@@ -1215,18 +1318,6 @@ export default function App() {
             </div>
 
             <div className="flex justify-center gap-3">
-              {/* Optional test helper to speed up cofre testing for developers */}
-              {!canOpenChest && (
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('geometry_dash_last_chest_time');
-                    setCanOpenChest(true);
-                  }}
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-400 hover:text-white font-mono rounded-lg transition"
-                >
-                  DEV: RESET 24H
-                </button>
-              )}
               <button
                 onClick={() => setShowChestModal(false)}
                 className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition"

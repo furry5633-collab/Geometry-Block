@@ -17,6 +17,7 @@ import {
   drawBall
 } from '../skins';
 import { Sparkles, Palette, ShieldCheck, ArrowLeft, Lock, Edit2, Coins, Gem, Trophy, Star } from 'lucide-react';
+import { audio } from '../audio';
 
 interface SkinCustomizerProps {
   skins: PlayerSkins;
@@ -61,8 +62,17 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
   const [purchaseSkin, setPurchaseSkin] = useState<{ skinId: string; cost: number; label: string } | null>(null);
   const [notEnoughOrbs, setNotEnoughOrbs] = useState<{ cost: number } | null>(null);
 
-  // Load unlocked skins from localStorage or define defaults (Since we only have 4, all are unlocked by default)
+  // Load unlocked skins from localStorage or define defaults
   const [unlockedSkins, setUnlockedSkins] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('geometry_dash_unlocked_skins');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load unlocked skins:', e);
+    }
     return [
       'cube_classic', 'cube_angry', 'cube_cool', 'cube_creeper',
       'wave_classic', 'wave_dual', 'wave_cyber', 'wave_spiked',
@@ -71,8 +81,18 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
     ];
   });
 
+  // Save unlocked skins to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('geometry_dash_unlocked_skins', JSON.stringify(unlockedSkins));
+    } catch (e) {
+      console.error('Failed to save unlocked skins:', e);
+    }
+  }, [unlockedSkins]);
+
   // Sync activeTab and activeCategory
   const handleCategorySelect = (cat: gdCategory) => {
+    audio.playClick();
     setActiveCategory(cat);
     setSkinPage(0);
     if (cat === 'cube' || cat === 'wave' || cat === 'robot' || cat === 'ball') {
@@ -111,6 +131,7 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
   };
 
   const handleSelectSkin = (skinId: string, index: number) => {
+    audio.playClick();
     if (isSkinUnlocked(skinId)) {
       onSkinsChange({
         ...skins,
@@ -136,6 +157,7 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
   };
 
   const handleSelectColor = (type: 'primary' | 'secondary', color: string) => {
+    audio.playClick();
     onSkinsChange({
       ...skins,
       [type === 'primary' ? 'primaryColor' : 'secondaryColor']: color
@@ -143,6 +165,7 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
   };
 
   const handleSaveName = () => {
+    audio.playClick();
     const trimmed = editedName.trim();
     if (trimmed) {
       onProfileChange(prev => ({
