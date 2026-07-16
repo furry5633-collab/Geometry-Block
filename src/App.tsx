@@ -12,6 +12,7 @@ import {
   saveCustomLevel,
   deleteCustomLevel,
   saveLevelProgress,
+  saveLevelPracticeProgress,
   uploadCustomLevelToOnline,
   getLevelProgress
 } from './levels';
@@ -21,6 +22,8 @@ import SkinCustomizer from './components/SkinCustomizer';
 import LevelBuilder from './components/LevelBuilder';
 import OnlineLevelBrowser from './components/OnlineLevelBrowser';
 import MultiplayerMenu from './components/MultiplayerMenu';
+import { PlayerLevelBar } from './components/PlayerLevelBar';
+import { LevelRewardsModal } from './components/LevelRewardsModal';
 import {
   Sparkles,
   Play as PlayIcon,
@@ -127,6 +130,7 @@ export default function App() {
   const [countdownText, setCountdownText] = useState('');
   const [canOpenChest, setCanOpenChest] = useState(true);
   const [showEditorHub, setShowEditorHub] = useState<boolean>(false);
+  const [showRewardsModal, setShowRewardsModal] = useState<boolean>(false);
 
   // Custom sandbox-immune modals states
   const [newProjectModal, setNewProjectModal] = useState<boolean>(false);
@@ -191,7 +195,7 @@ export default function App() {
     }
   }, []);
 
-  const handleRegisterAccount = () => {
+  const handleRegisterAccount = async () => {
     setAuthError('');
     const cleanUsername = authUsername.trim();
     const cleanPassword = authPassword.trim();
@@ -212,10 +216,25 @@ export default function App() {
       const accountsData = localStorage.getItem('geometry_dash_accounts');
       const accounts: any[] = accountsData ? JSON.parse(accountsData) : [];
       
-      const exists = accounts.some(acc => acc.username.toLowerCase() === cleanUsername.toLowerCase());
+      const exists = accounts.some(acc => acc.username.toLowerCase() === cleanUsername.toLowerCase() && acc.passwordHash);
       if (exists) {
-        setAuthError('Este nombre de usuario ya está registrado.');
+        setAuthError('Este nombre de usuario ya está registrado en este navegador.');
         return;
+      }
+
+      // Also double-check on server if already registered there
+      try {
+        const checkRes = await fetch('/api/players');
+        if (checkRes.ok) {
+          const serverUsers = await checkRes.json();
+          const serverExists = serverUsers.some((u: any) => u.username.toLowerCase() === cleanUsername.toLowerCase() && u.passwordHash);
+          if (serverExists) {
+            setAuthError('Este nombre de usuario ya tiene una cuenta registrada.');
+            return;
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Could not check server users on registration, proceeding offline first:', checkErr);
       }
 
       const newProfile: UserProfile = {
@@ -224,6 +243,8 @@ export default function App() {
         orbs: profile.orbs > 150 ? profile.orbs : 150,
         diamonds: profile.diamonds > 8 ? profile.diamonds : 8,
         completedCount: profile.completedCount,
+        xp: profile.xp || 0,
+        claimedRewards: profile.claimedRewards || []
       };
 
       const newAccount = {
@@ -231,6 +252,23 @@ export default function App() {
         passwordHash: cleanPassword,
         profile: newProfile
       };
+
+      // Register/sync with server first so passwordHash is persisted
+      try {
+        await fetch('/api/players/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: cleanUsername,
+            skins,
+            stats: newProfile,
+            passwordHash: cleanPassword,
+            createdLevels: customLevels.map(lvl => ({ id: lvl.id, name: lvl.name }))
+          })
+        });
+      } catch (serverErr) {
+        console.warn('Failed to register player on server, will sync later:', serverErr);
+      }
 
       accounts.push(newAccount);
       localStorage.setItem('geometry_dash_accounts', JSON.stringify(accounts));
@@ -247,7 +285,7 @@ export default function App() {
     }
   };
 
-  const handleLoginAccount = () => {
+  const handleLoginAccount = async () => {
     setAuthError('');
     const cleanUsername = authUsername.trim();
     const cleanPassword = authPassword.trim();
@@ -260,10 +298,52 @@ export default function App() {
       const accountsData = localStorage.getItem('geometry_dash_accounts');
       const accounts: any[] = accountsData ? JSON.parse(accountsData) : [];
       
-      const account = accounts.find(acc => acc.username.toLowerCase() === cleanUsername.toLowerCase() && acc.passwordHash === cleanPassword);
+      let account = accounts.find(acc => acc.username.toLowerCase() === cleanUsername.toLowerCase() && acc.passwordHash === cleanPassword);
+      
+      // If not found in local accounts, try hitting the server login API!
       if (!account) {
-        setAuthError('Usuario o contraseña incorrectos.');
-        return;
+        try {
+          const res = await fetch('/api/players/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: cleanUsername, password: cleanPassword })
+          });
+          
+          if (res.ok) {
+            const serverUser = await res.json();
+            const serverProfile: UserProfile = {
+              username: serverUser.username,
+              stars: serverUser.stats?.stars ?? 12,
+              orbs: serverUser.stats?.orbs ?? 150,
+              diamonds: serverUser.stats?.diamonds ?? 8,
+              completedCount: serverUser.stats?.completedCount ?? 0,
+              xp: serverUser.stats?.xp ?? 0,
+              claimedRewards: serverUser.stats?.claimedRewards ?? []
+            };
+
+            account = {
+              username: serverUser.username,
+              passwordHash: serverUser.passwordHash || cleanPassword,
+              profile: serverProfile
+            };
+
+            // Sync skins if available
+            if (serverUser.skins) {
+              setSkins(serverUser.skins);
+              localStorage.setItem('geometry_dash_skins', JSON.stringify(serverUser.skins));
+            }
+
+            accounts.push(account);
+            localStorage.setItem('geometry_dash_accounts', JSON.stringify(accounts));
+          } else {
+            const errBody = await res.json().catch(() => ({}));
+            setAuthError(errBody.error || 'Usuario o contraseña incorrectos.');
+            return;
+          }
+        } catch (serverErr) {
+          setAuthError('No se pudo conectar con el servidor. Verifica tu conexión.');
+          return;
+        }
       }
 
       localStorage.setItem('geometry_dash_logged_in_user', account.username);
@@ -378,6 +458,21 @@ export default function App() {
     setViewState('editor');
   };
 
+  const handleClaimReward = (rewardLevel: number, reward: any) => {
+    audio.playClick();
+    setProfile(prev => {
+      const currentClaimed = prev.claimedRewards || [];
+      if (currentClaimed.includes(rewardLevel)) return prev;
+      return {
+        ...prev,
+        orbs: prev.orbs + reward.orbs,
+        diamonds: prev.diamonds + reward.diamonds,
+        stars: prev.stars + reward.stars,
+        claimedRewards: [...currentClaimed, rewardLevel]
+      };
+    });
+  };
+
   // Open daily chest prize trigger (strictly enforces 24 hour lockout)
   const handleOpenChest = () => {
     if (!canOpenChest) return;
@@ -410,26 +505,57 @@ export default function App() {
   };
 
   // Callback from GameCanvas when a run finishes or player crashes
-  const handleProgressUpdate = (percentage: number, attemptsCount: number, isWon: boolean) => {
+  const handleProgressUpdate = (percentage: number, attemptsCount: number, isWon: boolean, isPractice?: boolean) => {
     if (!selectedLevel) return;
     
     // Save locally
     const currentProgress = getLevelProgress(selectedLevel.id);
-    const updated = saveLevelProgress(selectedLevel.id, percentage, attemptsCount, isWon);
+    let updated;
+    if (isPractice) {
+      updated = saveLevelPracticeProgress(selectedLevel.id, percentage);
+    } else {
+      updated = saveLevelProgress(selectedLevel.id, percentage, attemptsCount, isWon);
+    }
 
-    // Award reward points if level is completed for the first time
-    if (isWon && !currentProgress.completed) {
+    // Calculate XP gained from progress
+    const previousMaxPercentage = isPractice ? currentProgress.practiceProgress || 0 : currentProgress.normalProgress || 0;
+    const progressGain = Math.max(0, percentage - previousMaxPercentage);
+    
+    // XP is awarded for hitting new milestones in progress!
+    // Practice mode awards slightly reduced XP (0.5 XP per 1% progress, no completion bonus)
+    let xpGained = 0;
+    if (isPractice) {
+      xpGained = Math.floor(progressGain * 0.5);
+    } else {
+      xpGained = Math.floor(progressGain * 1.5); // 1.5 XP per 1% progress
+      if (isWon && !currentProgress.completed) {
+        xpGained += 150; // Massively rewarding first completion!
+      }
+    }
+
+    // Award reward points if level is completed for the first time (only in normal mode!)
+    if ((isWon && !currentProgress.completed && !isPractice) || xpGained > 0) {
       setProfile(prev => {
         const starsGained = selectedLevel.starsReward || 3;
         const orbsGained = selectedLevel.orbsReward || 100;
         const diamondsGained = Math.ceil(starsGained / 2) + 2;
 
+        const currentXP = prev.xp || 0;
+        // Cap level at 100, which is reached at 100 * 200 = 20000 XP
+        const nextXP = Math.min(20000, currentXP + xpGained);
+
+        const earnedStars = (isWon && !currentProgress.completed && !isPractice) ? starsGained : 0;
+        const earnedOrbs = (isWon && !currentProgress.completed && !isPractice) ? orbsGained : 0;
+        const earnedDiamonds = (isWon && !currentProgress.completed && !isPractice) ? diamondsGained : 0;
+        const earnedCompleted = (isWon && !currentProgress.completed && !isPractice) ? 1 : 0;
+
         return {
           ...prev,
-          stars: prev.stars + starsGained,
-          orbs: prev.orbs + orbsGained,
-          diamonds: prev.diamonds + diamondsGained,
-          completedCount: prev.completedCount + 1
+          stars: prev.stars + earnedStars,
+          orbs: prev.orbs + earnedOrbs,
+          diamonds: prev.diamonds + earnedDiamonds,
+          completedCount: prev.completedCount + earnedCompleted,
+          xp: nextXP
         };
       });
     }
@@ -522,7 +648,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative bg-slate-950 text-white font-sans overflow-hidden flex items-center justify-center p-0 select-none" style={{ height: '100dvh', width: '100dvw' }}>
+    <div className="relative bg-slate-950 text-white font-sans overflow-y-auto md:overflow-hidden flex items-center justify-center p-0 select-none w-screen min-h-screen" style={{ minHeight: '100dvh' }}>
       <AnimatePresence mode="wait">
         
         {/* 1. VIEW ROUTER: GAMEPLAY CANVAS ACTIVE */}
@@ -1084,7 +1210,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
-            className="w-full h-full bg-purple-950 relative flex flex-col justify-between p-8 select-none"
+            className="w-full min-h-screen sm:h-full bg-purple-950 relative flex flex-col justify-between p-4 sm:p-8 select-none gap-4 overflow-y-auto sm:overflow-visible"
           >
           
           {/* Animated Mountains Background */}
@@ -1099,48 +1225,59 @@ export default function App() {
           </div>
 
           {/* Upper Profile Info Bar & Stats (Save System!) */}
-          <div className="z-10 flex flex-col sm:flex-row gap-3 justify-between sm:items-center bg-black/35 backdrop-blur px-5 py-2.5 rounded-2xl border border-purple-800/40">
-            <div className="flex items-center gap-2">
-              <button
+          <div className="z-10 flex flex-col xl:flex-row gap-4 justify-between xl:items-center bg-black/45 backdrop-blur px-5 py-3 rounded-2xl border border-purple-800/40 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+              <PlayerLevelBar
+                profile={profile}
+                skins={skins}
                 onClick={() => {
-                  setAuthError('');
-                  setAuthMode(isLoggedIn ? 'login' : 'register');
-                  setShowAuthModal(true);
+                  audio.playClick();
+                  setShowRewardsModal(true);
                 }}
-                className="flex items-center gap-2 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 px-3.5 py-1.5 rounded-xl cursor-pointer transition text-white active:scale-95 text-xs font-bold font-mono group"
-              >
-                <User className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-                <span className="tracking-wider uppercase text-cyan-300">
-                  {isLoggedIn ? profile.username : 'CREAR CUENTA / LOGIN'}
-                </span>
-              </button>
+              />
               
-              {isLoggedIn && (
+              <div className="flex sm:flex-col gap-2 shrink-0 justify-center">
                 <button
-                  onClick={handleLogout}
-                  className="text-[10px] font-mono font-black text-rose-400 hover:text-rose-300 hover:bg-rose-950 bg-rose-950/40 px-2.5 py-1.5 rounded-xl border border-rose-900/40 cursor-pointer transition uppercase"
-                  title="Cerrar Sesión"
+                  onClick={() => {
+                    setAuthError('');
+                    setAuthMode(isLoggedIn ? 'login' : 'register');
+                    setShowAuthModal(true);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 px-3.5 py-1.5 rounded-xl cursor-pointer transition text-white active:scale-95 text-[10px] font-black font-mono uppercase group"
                 >
-                  Salir
+                  <User className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                  <span className="tracking-wider text-cyan-300">
+                    {isLoggedIn ? 'Cuentas' : 'Login / Registro'}
+                  </span>
                 </button>
-              )}
+                
+                {isLoggedIn && (
+                  <button
+                    onClick={handleLogout}
+                    className="flex-1 text-[9px] font-mono font-black text-rose-400 hover:text-rose-300 hover:bg-rose-950 bg-rose-950/40 px-2.5 py-1.5 rounded-xl border border-rose-900/40 cursor-pointer transition uppercase text-center"
+                    title="Cerrar Sesión"
+                  >
+                    Salir
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Profile points counters */}
-            <div className="flex items-center gap-5 font-mono text-xs">
-              <div className="flex items-center gap-1 text-yellow-400" title="Estrellas ganadas">
+            <div className="flex items-center gap-4 sm:gap-5 font-mono text-xs overflow-x-auto py-1 sm:py-0">
+              <div className="flex items-center gap-1.5 text-yellow-400" title="Estrellas ganadas">
                 <span className="text-sm">⭐</span>
                 <span className="font-bold">{profile.stars}</span>
               </div>
-              <div className="flex items-center gap-1 text-pink-400" title="Orbes de Poder">
+              <div className="flex items-center gap-1.5 text-pink-400" title="Orbes de Poder">
                 <span className="text-sm">💎</span>
                 <span className="font-bold">{profile.orbs}</span>
               </div>
-              <div className="flex items-center gap-1 text-cyan-400" title="Diamantes Azules">
+              <div className="flex items-center gap-1.5 text-cyan-400" title="Diamantes Azules">
                 <span className="text-sm">💠</span>
                 <span className="font-bold">{profile.diamonds}</span>
               </div>
-              <div className="flex items-center gap-1 text-emerald-400 border-l border-purple-800/60 pl-4" title="Niveles completados">
+              <div className="flex items-center gap-1.5 text-emerald-400 border-l border-purple-800/60 pl-4" title="Niveles completados">
                 <Trophy className="w-3.5 h-3.5" />
                 <span className="font-bold">{profile.completedCount}</span>
               </div>
@@ -1677,6 +1814,16 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 5. LEVEL REWARDS PATH PATHWAY MODAL */}
+      {showRewardsModal && (
+        <LevelRewardsModal
+          profile={profile}
+          skins={skins}
+          onClaim={handleClaimReward}
+          onClose={() => setShowRewardsModal(false)}
+        />
       )}
 
     </div>

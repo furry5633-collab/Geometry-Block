@@ -86,4 +86,6 @@ export interface UserProfile {
   orbs: number;
   diamonds: number;
   completedCount: number;
+  xp?: number;
+  claimedRewards?: number[];
 }

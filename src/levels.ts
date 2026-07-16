@@ -589,3 +589,29 @@ export function saveLevelProgress(levelId: string, percentage: number, attempts:
     };
   }
 }
+
+export function saveLevelPracticeProgress(levelId: string, percentage: number): ProgressData {
+  try {
+    const data = localStorage.getItem(PROGRESS_STORAGE_KEY) || '{}';
+    const progressMap = JSON.parse(data);
+    const existing = progressMap[levelId] || {
+      normalProgress: 0,
+      practiceProgress: 0,
+      completed: false,
+      attemptsCount: 0
+    };
+
+    existing.practiceProgress = Math.max(existing.practiceProgress, percentage);
+    progressMap[levelId] = existing;
+    localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progressMap));
+    return existing;
+  } catch (e) {
+    console.error(e);
+    return {
+      normalProgress: 0,
+      practiceProgress: percentage,
+      completed: false,
+      attemptsCount: 0
+    };
+  }
+}

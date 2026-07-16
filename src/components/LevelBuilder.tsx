@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Level, LevelElement, ElementType, Difficulty } from '../types';
 import { saveCustomLevel } from '../levels';
 import {
@@ -240,6 +240,15 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
   const [levelTheme, setLevelTheme] = useState<string>(initialLevel?.theme || 'purple');
   const [elements, setElements] = useState<LevelElement[]>(initialLevel?.elements || []);
   
+  // O(1) Pre-indexed element coordinate map to eliminate editor rendering lag completely
+  const elementsMap = useMemo(() => {
+    const map = new Map<string, LevelElement>();
+    elements.forEach(el => {
+      map.set(`${el.x},${el.y}`, el);
+    });
+    return map;
+  }, [elements]);
+  
   // Editor mode: 'build' | 'edit' | 'delete'
   const [editorMode, setEditorMode] = useState<'build' | 'edit' | 'delete'>('build');
   
@@ -318,7 +327,8 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
 
   // Grid interaction: add / edit / remove elements
   const toggleElementAt = (x: number, y: number) => {
-    const existingIndex = elements.findIndex(el => el.x === x && el.y === y);
+    const existingElement = elementsMap.get(`${x},${y}`);
+    const existingIndex = existingElement ? elements.indexOf(existingElement) : -1;
 
     if (editorMode === 'build') {
       const newEl: LevelElement = {
@@ -459,7 +469,7 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
 
   const handleShiftSelected = (dir: 'up' | 'down' | 'left' | 'right') => {
     if (!selectedEditCoord) return;
-    const target = elements.find(el => el.x === selectedEditCoord.x && el.y === selectedEditCoord.y);
+    const target = elementsMap.get(`${selectedEditCoord.x},${selectedEditCoord.y}`);
     if (!target) return;
 
     let nextX = target.x;
@@ -479,7 +489,8 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
 
   const handleDeleteSelected = () => {
     if (!selectedEditCoord) return;
-    const filtered = elements.filter(el => !(el.x === selectedEditCoord.x && el.y === selectedEditCoord.y));
+    const target = elementsMap.get(`${selectedEditCoord.x},${selectedEditCoord.y}`);
+    const filtered = target ? elements.filter(el => el.id !== target.id) : elements;
     updateElementsWithHistory(filtered);
     setSelectedEditCoord(null);
   };
@@ -683,7 +694,7 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
                       >
                         {Array.from({ length: visibleColumnsCount }).map((_, colIdx) => {
                           const cellX = scrollOffset + colIdx;
-                          const existingElement = elements.find(el => el.x === cellX && el.y === rowY);
+                          const existingElement = elementsMap.get(`${cellX},${rowY}`);
                           const isSelectedCell = selectedEditCoord && selectedEditCoord.x === cellX && selectedEditCoord.y === rowY;
 
                           let cellBg = 'bg-black/35 hover:bg-white/10 border-white/5';
@@ -814,36 +825,36 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
       </div>
 
       {/* 4. REDESIGNED SLIM PANEL (MODES AND PALETTE CONSOLIDATED) */}
-      <div className="bg-[#121315] border-t-2 border-black/50 p-2 flex flex-row gap-3 items-center shrink-0 h-[105px] overflow-hidden select-none">
+      <div className="bg-[#121315] border-t-2 border-black/50 p-1.5 sm:p-2 flex flex-row gap-2 sm:gap-3 items-center shrink-0 h-[92px] sm:h-[105px] overflow-hidden select-none">
         
         {/* LEFT COMPACT SECTION: EDITOR MODE SELECTOR TABS */}
-        <div className="flex flex-col gap-1 bg-black/30 p-1.5 rounded-xl border border-white/5 h-full justify-between shrink-0 w-[110px]">
+        <div className="flex flex-col gap-1 bg-black/30 p-1 rounded-xl border border-white/5 h-full justify-between shrink-0 w-[100px] sm:w-[110px]">
           <button
             onClick={() => {
               setEditorMode('build');
               setSelectedEditCoord(null);
             }}
-            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'build' ? 'bg-gradient-to-b from-green-500 to-green-700 text-white border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
+            className={`w-full py-0.5 sm:py-1 px-1 rounded-lg text-[8px] sm:text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'build' ? 'bg-gradient-to-b from-green-500 to-green-700 text-white border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            <span className="text-[10px]">🧱</span> CONSTRUIR
+            <span className="text-[9px] sm:text-[10px]">🧱</span> CONSTR.
           </button>
           <button
             onClick={() => {
               setEditorMode('edit');
               setSelectedEditCoord(null);
             }}
-            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'edit' ? 'bg-gradient-to-b from-cyan-500 to-cyan-700 text-white border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
+            className={`w-full py-0.5 sm:py-1 px-1 rounded-lg text-[8px] sm:text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'edit' ? 'bg-gradient-to-b from-cyan-500 to-cyan-700 text-white border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            <span className="text-[10px]">✏️</span> EDITAR
+            <span className="text-[9px] sm:text-[10px]">✏️</span> EDITAR
           </button>
           <button
             onClick={() => {
               setEditorMode('delete');
               setSelectedEditCoord(null);
             }}
-            className={`w-full py-1 px-1.5 rounded-lg text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'delete' ? 'bg-gradient-to-b from-red-600 to-red-800 text-white border-red-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
+            className={`w-full py-0.5 sm:py-1 px-1 rounded-lg text-[8px] sm:text-[9px] font-black uppercase text-center cursor-pointer transition flex items-center gap-1 border ${editorMode === 'delete' ? 'bg-gradient-to-b from-red-600 to-red-800 text-white border-red-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
           >
-            <span className="text-[10px]">🗑️</span> BORRAR
+            <span className="text-[9px] sm:text-[10px]">🗑️</span> BORRAR
           </button>
         </div>
 
@@ -876,17 +887,17 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
               </div>
 
               {/* Brushes Items Picker Row */}
-              <div className="flex-1 flex items-center gap-2 overflow-x-auto overflow-y-hidden py-1 px-1 scrollbar-thin">
+              <div className="flex-1 flex items-center gap-1.5 sm:gap-2 overflow-x-auto overflow-y-hidden py-0.5 sm:py-1 px-1 scrollbar-thin">
                 {activeBrushesByCategory.map(brush => {
                   const active = activeBrush === brush.type;
                   return (
                     <button
                       key={brush.type}
                       onClick={() => setActiveBrush(brush.type)}
-                      className={`h-11 w-11 shrink-0 rounded-lg border-2 flex flex-col items-center justify-center p-[2px] transition hover:scale-105 active:scale-95 relative cursor-pointer select-none ${active ? 'bg-gradient-to-b from-yellow-300 to-yellow-500 border-black text-black scale-103 shadow-md shadow-yellow-400/20 z-10' : 'bg-slate-900/90 border-slate-700 text-slate-300'}`}
+                      className={`h-[38px] w-[38px] sm:h-11 sm:w-11 shrink-0 rounded-lg border-2 flex flex-col items-center justify-center p-[2px] transition hover:scale-105 active:scale-95 relative cursor-pointer select-none ${active ? 'bg-gradient-to-b from-yellow-300 to-yellow-500 border-black text-black scale-103 shadow-md shadow-yellow-400/20 z-10' : 'bg-slate-900/90 border-slate-700 text-slate-300'}`}
                       title={brush.name}
                     >
-                      <div className="w-full h-full flex items-center justify-center select-none pointer-events-none">
+                      <div className="w-full h-full flex items-center justify-center select-none pointer-events-none scale-90 sm:scale-100">
                         {renderVisualElement(brush.type)}
                       </div>
                       
@@ -921,7 +932,7 @@ export default function LevelBuilder({ initialLevel, onSaveAndClose, onPlaytest 
             <div className="flex-1 flex items-center h-full">
               {selectedEditCoord ? (
                 (() => {
-                  const elementAtCoord = elements.find(el => el.x === selectedEditCoord.x && el.y === selectedEditCoord.y);
+                  const elementAtCoord = elementsMap.get(`${selectedEditCoord.x},${selectedEditCoord.y}`);
                   return (
                     <div className="w-full flex items-center justify-between gap-2 px-1 select-none animate-fade-in">
                       

@@ -83,7 +83,7 @@ export default function MultiplayerMenu({
   // 1. Establish WebSocket Connection
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socketUrl = `${protocol}//${window.location.host}?username=${encodeURIComponent(profile.username)}`;
+    const socketUrl = `${protocol}//${window.location.host}/ws?username=${encodeURIComponent(profile.username)}`;
     
     const ws = new WebSocket(socketUrl);
     wsRef.current = ws;

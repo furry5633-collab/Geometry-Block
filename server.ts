@@ -168,20 +168,24 @@ async function start() {
   });
 
   app.post('/api/players/register', (req, res) => {
-    const { username, skins, stats, createdLevels } = req.body;
+    const { username, skins, stats, createdLevels, passwordHash } = req.body;
     if (!username) {
       return res.status(400).json({ error: 'Missing username' });
     }
     const users = loadUsers();
     const existingIndex = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
     
-    const userPayload = {
+    const userPayload: any = {
       username,
       skins: skins || {},
       stats: stats || {},
       createdLevels: createdLevels || [],
       lastActive: Date.now()
     };
+
+    if (passwordHash) {
+      userPayload.passwordHash = passwordHash;
+    }
 
     if (existingIndex >= 0) {
       users[existingIndex] = {
@@ -192,12 +196,36 @@ async function start() {
           ...stats
         }
       };
+      if (passwordHash) {
+        users[existingIndex].passwordHash = passwordHash;
+      }
     } else {
       users.push(userPayload);
     }
 
     saveUsers(users);
-    res.status(200).json(userPayload);
+    res.status(200).json(users[existingIndex >= 0 ? existingIndex : users.length - 1]);
+  });
+
+  app.post('/api/players/login', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Missing username or password' });
+    }
+    const users = loadUsers();
+    const user = users.find((u: any) => u.username.toLowerCase() === username.toLowerCase());
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+    if (user.passwordHash && user.passwordHash !== password) {
+      return res.status(401).json({ error: 'Contraseña incorrecta.' });
+    }
+    // If the server-side record doesn't have a password yet, bind it now!
+    if (!user.passwordHash) {
+      user.passwordHash = password;
+      saveUsers(users);
+    }
+    res.status(200).json(user);
   });
 
   // Friendships APIs
@@ -432,7 +460,16 @@ async function start() {
     console.log(`[Server] Running on http://localhost:${PORT}`);
   });
 
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`).pathname;
+    if (pathname === '/ws') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    }
+  });
 
   // Store active online players: username -> WebSocket
   const onlineSockets = new Map<string, WebSocket>();

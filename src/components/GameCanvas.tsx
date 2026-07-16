@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Level, PlayerSkins, Gamemode, ElementType } from '../types';
 import { drawCube, drawWave, drawRobot, drawBall } from '../skins';
 import { audio } from '../audio';
-import { TILE_SIZE, GROUND_Y_PIXELS, gridToX, gridToY } from '../levels';
+import { TILE_SIZE, GROUND_Y_PIXELS, gridToX, gridToY, getLevelProgress } from '../levels';
 import { Play, RotateCcw, X, Volume2, VolumeX, Award, ShieldAlert } from 'lucide-react';
 
 export interface LevelTheme {
@@ -34,7 +34,7 @@ interface GameCanvasProps {
   skins: PlayerSkins;
   onExit: () => void;
   isPlaytesting?: boolean;
-  onProgress?: (percentage: number, attempts: number, isWon: boolean) => void;
+  onProgress?: (percentage: number, attempts: number, isWon: boolean, isPractice?: boolean) => void;
   multiplayerState?: {
     isMultiplayer: boolean;
     roomId: string | null;
@@ -76,6 +76,29 @@ export default function GameCanvas({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [collectedCoins, setCollectedCoins] = useState<string[]>([]);
+
+  // Practice Mode states & performance refs
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
+
+  const isPracticeModeRef = useRef(false);
+  const checkpointsRef = useRef<any[]>([]);
+
+  useEffect(() => {
+    isPracticeModeRef.current = isPracticeMode;
+  }, [isPracticeMode]);
+
+  useEffect(() => {
+    checkpointsRef.current = checkpoints;
+  }, [checkpoints]);
+
+  const [progressStats, setProgressStats] = useState<any>(null);
+
+  useEffect(() => {
+    if (isPaused && level.id) {
+      setProgressStats(getLevelProgress(level.id));
+    }
+  }, [isPaused, level.id]);
 
   // References to keep state updated in the fast RAF (RequestAnimationFrame) loop
   const stateRef = useRef({
@@ -180,6 +203,10 @@ export default function GameCanvas({
     state.collectedCoins = [];
     setCollectedCoins([]);
     
+    if (!isPracticeModeRef.current) {
+      setCheckpoints([]);
+    }
+    
     if (incrementAttempts) {
       setAttempts(prev => {
         state.attempts = prev + 1;
@@ -196,6 +223,81 @@ export default function GameCanvas({
 
     if (soundEnabled) {
       audio.stopMusic();
+      audio.startMusic(getTrackForLevel(level));
+    }
+  };
+
+  const placeCheckpoint = () => {
+    const state = stateRef.current;
+    if (state.isDying || state.levelPassed) return;
+    
+    const cp = {
+      cameraX: state.cameraX,
+      playerX: state.playerX,
+      playerY: state.playerY,
+      playerYVelocity: state.playerYVelocity,
+      gamemode: state.gamemode,
+      gravityDirection: state.gravityDirection,
+      isGrounded: state.isGrounded,
+      rotation: state.rotation,
+      waveTrail: [...state.waveTrail],
+      speedMultiplier: state.speedMultiplier,
+      lastPortalId: state.lastPortalId,
+      lastSpeedId: state.lastSpeedId,
+      collectedCoins: [...state.collectedCoins],
+    };
+    
+    const updated = [...checkpointsRef.current, cp];
+    setCheckpoints(updated);
+    if (soundEnabled) {
+      audio.playLand();
+    }
+  };
+
+  const removeLastCheckpoint = () => {
+    if (checkpointsRef.current.length === 0) return;
+    const updated = checkpointsRef.current.slice(0, -1);
+    setCheckpoints(updated);
+    if (soundEnabled) {
+      audio.playGravitySwap();
+    }
+  };
+
+  const restoreToCheckpoint = () => {
+    const state = stateRef.current;
+    if (checkpointsRef.current.length === 0) {
+      restartLevel(false);
+      return;
+    }
+    
+    const cp = checkpointsRef.current[checkpointsRef.current.length - 1];
+    
+    state.cameraX = cp.cameraX;
+    state.playerX = cp.playerX;
+    state.playerY = cp.playerY;
+    state.playerYVelocity = cp.playerYVelocity;
+    state.gamemode = cp.gamemode;
+    state.gravityDirection = cp.gravityDirection;
+    state.isGrounded = cp.isGrounded;
+    state.rotation = cp.rotation;
+    state.waveTrail = [...cp.waveTrail];
+    state.speedMultiplier = cp.speedMultiplier;
+    state.lastPortalId = cp.lastPortalId;
+    state.lastSpeedId = cp.lastSpeedId;
+    state.collectedCoins = [...cp.collectedCoins];
+    setCollectedCoins([...cp.collectedCoins]);
+    
+    state.particles = [];
+    state.shards = [];
+    state.isDying = false;
+    state.winSequenceActive = false;
+    state.winSequenceProgress = 0;
+    
+    setIsGameOver(false);
+    setHasWon(false);
+    setIsPaused(false);
+    
+    if (soundEnabled) {
       audio.startMusic(getTrackForLevel(level));
     }
   };
@@ -335,6 +437,16 @@ export default function GameCanvas({
           stateRef.current.spacePressed = true;
           stateRef.current.isMouseDown = true;
           handleTriggerPress();
+        }
+      }
+      if (e.key === 'z' || e.key === 'Z') {
+        if (isPracticeModeRef.current) {
+          placeCheckpoint();
+        }
+      }
+      if (e.key === 'x' || e.key === 'X') {
+        if (isPracticeModeRef.current) {
+          removeLastCheckpoint();
         }
       }
       if (e.code === 'Escape') {
@@ -515,7 +627,7 @@ export default function GameCanvas({
           setPercentage(100);
           setHasWon(true);
           if (onProgress) {
-            onProgress(100, 1, true);
+            onProgress(100, 1, true, isPracticeModeRef.current);
           }
           if (soundEnabled) audio.playWin();
           return;
@@ -664,8 +776,8 @@ export default function GameCanvas({
             const headNormal = state.gravityDirection === 1; // standard gravity falls down onto block
 
             if (headNormal) {
-              // Landed on top of the block - highly forgiving edge-landing buffer (18px)
-              const wasAbove = prevY + pSize <= elY + 18;
+              // Landed on top of the block - highly forgiving edge-landing buffer (34px to support climbing block stairs/steps)
+              const wasAbove = prevY + pSize <= elY + 34;
               const isFalling = state.playerYVelocity >= -0.5;
 
               if (isFalling && wasAbove) {
@@ -683,7 +795,7 @@ export default function GameCanvas({
               }
             } else {
               // Inverted Gravity: Walked on bottom of block
-              const wasBelow = prevY >= elY + TILE_SIZE - 18;
+              const wasBelow = prevY >= elY + TILE_SIZE - 34;
               const isRisingInverted = state.playerYVelocity <= 0.5;
 
               if (isRisingInverted && wasBelow) {
@@ -910,7 +1022,7 @@ export default function GameCanvas({
 
       const currentProgress = Math.min(100, Math.floor((state.cameraX / state.levelLengthPixels) * 100));
       if (onProgress) {
-        onProgress(currentProgress, 1, false);
+        onProgress(currentProgress, 1, false, isPracticeModeRef.current);
       }
 
       // Generate a grid of individual rigid shards to shatter the player character
@@ -974,7 +1086,9 @@ export default function GameCanvas({
       // Show Game Over UI after the cube shattering finishes playing
       setTimeout(() => {
         if (state.isDying) {
-          if (multiplayerState && multiplayerState.isMultiplayer) {
+          if (isPracticeModeRef.current) {
+            restoreToCheckpoint();
+          } else if (multiplayerState && multiplayerState.isMultiplayer) {
             // In multiplayer, don't show the standard overlay, remain in spectating
           } else {
             setIsGameOver(true);
@@ -1568,6 +1682,51 @@ export default function GameCanvas({
       ctx.restore();
     }
 
+    // 5.5 Draw Practice Mode Checkpoints
+    if (isPracticeModeRef.current) {
+      checkpoints.forEach((cp, index) => {
+        const rx = (cp.cameraX + cp.playerX) - state.cameraX;
+        const ry = cp.playerY + 15; // center on player height
+
+        // Only draw if within screen range (+/- 50px buffer)
+        if (rx < -50 || rx > canvas.width + 50) return;
+
+        ctx.save();
+        ctx.translate(rx, ry);
+
+        // Glowing pulsing animation
+        const pulse = 1 + Math.sin(state.animationTick * 0.12 + index) * 0.15;
+        const radius = 8 * pulse;
+
+        // Diamond path
+        ctx.beginPath();
+        ctx.moveTo(0, -radius);
+        ctx.lineTo(radius, 0);
+        ctx.lineTo(0, radius);
+        ctx.lineTo(-radius, 0);
+        ctx.closePath();
+
+        // Neon emerald filling
+        ctx.shadowColor = '#10B981';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#10B981';
+        ctx.fill();
+
+        // Inner white diamond core
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.moveTo(0, -radius * 0.45);
+        ctx.lineTo(radius * 0.45, 0);
+        ctx.lineTo(0, radius * 0.45);
+        ctx.lineTo(-radius * 0.45, 0);
+        ctx.closePath();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+
+        ctx.restore();
+      });
+    }
+
     // 6. Draw Player Character
     if (!isGameOver && !state.isDying) {
       let pSize = state.playerSize;
@@ -1913,31 +2072,138 @@ export default function GameCanvas({
 
       {/* GAME PAUSED DIALOG OVERLAY */}
       {isPaused && (
-        <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center text-white z-20">
-          <h2 className="text-4xl font-extrabold uppercase tracking-widest text-cyan-400 mb-3">JUEGO EN PAUSA</h2>
-          <p className="text-slate-400 font-mono text-xs mb-8">Pulsa Escape o pulsa Reanudar para continuar la partida</p>
+        <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col md:flex-row items-center justify-center gap-8 text-white z-20 p-6 animate-fade-in select-none">
+          
+          {/* LEVEL DETAILS & STATS SUMMARY */}
+          <div className="flex flex-col gap-4 max-w-sm w-full bg-slate-900/90 border border-slate-800 p-5 rounded-2xl shadow-2xl relative overflow-hidden shrink-0">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-cyan-400 to-purple-600" />
+            
+            <div>
+              <span className="text-[10px] font-black tracking-widest text-cyan-400 uppercase">Estadísticas del Nivel</span>
+              <h3 className="text-2xl font-black text-white truncate mt-1">{level.name}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Creador: <span className="text-purple-300 font-bold">{level.author || 'Oficial'}</span></p>
+            </div>
 
+            <div className="h-px bg-slate-800/80 my-1" />
+
+            <div className="space-y-3.5">
+              {/* Normal Progress Bar */}
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center text-xs font-mono font-bold leading-none text-slate-300">
+                  <span className="flex items-center gap-1.5"><span className="text-yellow-400">🏆</span> MODO NORMAL</span>
+                  <span className="text-yellow-400">{progressStats?.normalProgress || 0}%</span>
+                </div>
+                <div className="w-full bg-black/45 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="bg-gradient-to-r from-yellow-500 to-amber-400 h-full transition-all duration-300"
+                    style={{ width: `${progressStats?.normalProgress || 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Practice Progress Bar */}
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center text-xs font-mono font-bold leading-none text-slate-300">
+                  <span className="flex items-center gap-1.5"><span className="text-emerald-400">💚</span> MODO PRÁCTICA</span>
+                  <span className="text-emerald-400">{progressStats?.practiceProgress || 0}%</span>
+                </div>
+                <div className="w-full bg-black/45 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
+                    style={{ width: `${progressStats?.practiceProgress || 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Current Attempt Progress Bar */}
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center text-xs font-mono font-bold leading-none text-slate-300">
+                  <span className="flex items-center gap-1.5"><span className="text-cyan-400">🏃</span> INTENTO ACTUAL</span>
+                  <span className="text-cyan-400">{percentage}%</span>
+                </div>
+                <div className="w-full bg-black/45 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="bg-gradient-to-r from-cyan-500 to-indigo-400 h-full transition-all duration-300"
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-800/80 my-1" />
+
+            {/* Practice Mode Toggler */}
+            <button
+              onClick={() => {
+                const nextMode = !isPracticeMode;
+                setIsPracticeMode(nextMode);
+                setCheckpoints([]);
+                restartLevel(false);
+              }}
+              className={`w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl transition font-black uppercase text-xs active:scale-95 border cursor-pointer ${
+                isPracticeMode 
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/40'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+              }`}
+            >
+              <Award className={`w-4 h-4 ${isPracticeMode ? 'animate-bounce text-yellow-300' : 'text-slate-500'}`} />
+              {isPracticeMode ? 'MODO PRÁCTICA: ACTIVO' : 'ACTIVAR MODO PRÁCTICA'}
+            </button>
+          </div>
+
+          {/* ACTION BUTTONS */}
           <div className="flex flex-col gap-3 w-56">
+            <h2 className="text-3xl font-black uppercase tracking-wider text-cyan-400 text-center mb-1 select-none drop-shadow">EN PAUSA</h2>
+            
             <button
               onClick={() => setIsPaused(false)}
-              className="flex items-center justify-center gap-2.5 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-base font-bold rounded-xl transition active:scale-95"
+              className="flex items-center justify-center gap-2.5 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-base font-bold rounded-xl transition active:scale-95 shadow-lg shadow-emerald-950/50 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               REANUDAR
             </button>
             <button
               onClick={() => restartLevel(false)}
-              className="flex items-center justify-center gap-2.5 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white text-base font-bold rounded-xl transition border border-slate-700 active:scale-95"
+              className="flex items-center justify-center gap-2.5 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white text-base font-bold rounded-xl transition border border-slate-700 active:scale-95 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               REINICIAR
             </button>
             <button
               onClick={onExit}
-              className="px-6 py-3 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-base font-bold rounded-xl transition border border-rose-900/30 active:scale-95 text-center"
+              className="px-6 py-3 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-base font-bold rounded-xl transition border border-rose-900/30 active:scale-95 text-center cursor-pointer"
             >
               SALIR AL MENÚ
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Practice Mode HUD Overlay when playing */}
+      {isPracticeMode && !isPaused && !isGameOver && !hasWon && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-700/50 pointer-events-auto shadow-2xl scale-95 sm:scale-100 select-none">
+          <button
+            onClick={placeCheckpoint}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 hover:text-black rounded-xl font-bold font-mono text-xs cursor-pointer transition-all active:scale-95"
+            title="Añadir Checkpoint (Teclado: Z)"
+          >
+            <span className="text-sm font-black">+</span> CP
+          </button>
+          <button
+            onClick={removeLastCheckpoint}
+            disabled={checkpoints.length === 0}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold font-mono text-xs cursor-pointer transition-all active:scale-95 ${
+              checkpoints.length === 0 
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                : 'bg-rose-500 hover:bg-rose-400 text-white'
+            }`}
+            title="Eliminar Último Checkpoint (Teclado: X)"
+          >
+            <span className="text-sm font-black">−</span> CP
+          </button>
+          <div className="text-[10px] font-mono text-slate-400 border-l border-slate-800 pl-3 leading-none flex flex-col justify-center">
+            <span className="text-emerald-400 font-bold uppercase">Práctica</span>
+            <span className="text-slate-500 text-[8px] mt-0.5">{checkpoints.length} Checkpoints</span>
           </div>
         </div>
       )}
