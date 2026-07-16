@@ -34,7 +34,7 @@ interface GameCanvasProps {
   skins: PlayerSkins;
   onExit: () => void;
   isPlaytesting?: boolean;
-  onProgress?: (percentage: number, attempts: number, isWon: boolean, isPractice?: boolean) => void;
+  onProgress?: (percentage: number, attempts: number, isWon: boolean, isPractice?: boolean, coinsCollectedInRun?: number) => void;
   multiplayerState?: {
     isMultiplayer: boolean;
     roomId: string | null;
@@ -627,7 +627,7 @@ export default function GameCanvas({
           setPercentage(100);
           setHasWon(true);
           if (onProgress) {
-            onProgress(100, 1, true, isPracticeModeRef.current);
+            onProgress(100, 1, true, isPracticeModeRef.current, state.collectedCoins.length);
           }
           if (soundEnabled) audio.playWin();
           return;
@@ -767,6 +767,43 @@ export default function GameCanvas({
         const overX = px + pSize > elX && px < elX + TILE_SIZE;
         const overY = py + pSize > elY && py < elY + TILE_SIZE;
 
+        // UNBYPASSABLE PORTALS & SPEED GATES (Mandatory triggers)
+        if (overX) {
+          if (el.type.startsWith('portal_')) {
+            if (state.lastPortalId !== el.id) {
+              state.lastPortalId = el.id;
+              
+              let nextMode: Gamemode = 'cube';
+              if (el.type === 'portal_cube') nextMode = 'cube';
+              else if (el.type === 'portal_wave') nextMode = 'wave';
+              else if (el.type === 'portal_robot') nextMode = 'robot';
+              else if (el.type === 'portal_ball') nextMode = 'ball';
+
+              state.gamemode = nextMode;
+              // Normalize gravity on portals just in case
+              if (nextMode !== 'ball') {
+                state.gravityDirection = 1;
+              }
+
+              // Visual burst around portal at player's height
+              spawnPortalBurst(elX + TILE_SIZE / 2, state.playerY + pSize / 2);
+              if (soundEnabled) audio.playPortalTransition();
+            }
+          }
+          else if (el.type.startsWith('speed_')) {
+            if (state.lastSpeedId !== el.id) {
+              state.lastSpeedId = el.id;
+              if (el.type === 'speed_1x') state.speedMultiplier = 1.0;
+              else if (el.type === 'speed_2x') state.speedMultiplier = 1.4;
+              else if (el.type === 'speed_3x') state.speedMultiplier = 1.8;
+
+              // Spawn flash trail at player's height
+              spawnRingBurst(elX + TILE_SIZE / 2, state.playerY + pSize / 2, '#00FFFF');
+              if (soundEnabled) audio.playSpeedGate();
+            }
+          }
+        }
+
         if (overX && overY) {
           // SOLID BLOCKS
           if (el.type === 'block') {
@@ -776,11 +813,11 @@ export default function GameCanvas({
             const headNormal = state.gravityDirection === 1; // standard gravity falls down onto block
 
             if (headNormal) {
-              // Landed on top of the block - highly forgiving edge-landing buffer (34px to support climbing block stairs/steps)
-              const wasAbove = prevY + pSize <= elY + 34;
-              const isFalling = state.playerYVelocity >= -0.5;
+              // Landed on top of the block - highly robust edge-landing / step-climbing buffer
+              const wasAbove = prevY + pSize <= elY + 12; // previous Y of player's bottom was higher than block top with minor tolerance
+              const isLandingFromAbove = prevY + pSize <= elY + 32 && state.playerYVelocity >= -2.0; // falling or rising very slowly onto the block
 
-              if (isFalling && wasAbove) {
+              if (wasAbove || isLandingFromAbove) {
                 state.playerY = elY - pSize;
                 state.playerYVelocity = 0;
                 state.isGrounded = true;
@@ -795,10 +832,10 @@ export default function GameCanvas({
               }
             } else {
               // Inverted Gravity: Walked on bottom of block
-              const wasBelow = prevY >= elY + TILE_SIZE - 34;
-              const isRisingInverted = state.playerYVelocity <= 0.5;
+              const wasBelow = prevY >= elY + TILE_SIZE - 12;
+              const isLandingFromBelow = prevY >= elY + TILE_SIZE - 32 && state.playerYVelocity <= 2.0;
 
-              if (isRisingInverted && wasBelow) {
+              if (wasBelow || isLandingFromBelow) {
                 state.playerY = elY + TILE_SIZE;
                 state.playerYVelocity = 0;
                 state.isGrounded = true;
@@ -869,29 +906,6 @@ export default function GameCanvas({
             }
           }
 
-          // PORTALS (Green, Cyan, Bronze, Magenta)
-          else if (el.type.startsWith('portal_')) {
-            if (state.lastPortalId !== el.id) {
-              state.lastPortalId = el.id;
-              
-              let nextMode: Gamemode = 'cube';
-              if (el.type === 'portal_cube') nextMode = 'cube';
-              else if (el.type === 'portal_wave') nextMode = 'wave';
-              else if (el.type === 'portal_robot') nextMode = 'robot';
-              else if (el.type === 'portal_ball') nextMode = 'ball';
-
-              state.gamemode = nextMode;
-              // Normalize gravity on portals just in case
-              if (nextMode !== 'ball') {
-                state.gravityDirection = 1;
-              }
-
-              // Visual burst around portal
-              spawnPortalBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2);
-              if (soundEnabled) audio.playPortalTransition();
-            }
-          }
-
           // JUMP PADS (Auto leap or Gravity swap)
           else if (el.type === 'pad_yellow' || el.type === 'pad_red' || el.type === 'pad_blue') {
             if (state.lastPadId !== el.id) {
@@ -938,20 +952,6 @@ export default function GameCanvas({
               // Nice yellow gold burst!
               spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, '#fbbf24');
               if (soundEnabled) audio.playCoinCollect();
-            }
-          }
-
-          // SPEED TRIGGERS
-          else if (el.type.startsWith('speed_')) {
-            if (state.lastSpeedId !== el.id) {
-              state.lastSpeedId = el.id;
-              if (el.type === 'speed_1x') state.speedMultiplier = 1.0;
-              else if (el.type === 'speed_2x') state.speedMultiplier = 1.4;
-              else if (el.type === 'speed_3x') state.speedMultiplier = 1.8;
-
-              // Spawn flash trail
-              spawnRingBurst(elX + TILE_SIZE / 2, elY + TILE_SIZE / 2, '#00FFFF');
-              if (soundEnabled) audio.playSpeedGate();
             }
           }
         }
@@ -1022,7 +1022,7 @@ export default function GameCanvas({
 
       const currentProgress = Math.min(100, Math.floor((state.cameraX / state.levelLengthPixels) * 100));
       if (onProgress) {
-        onProgress(currentProgress, 1, false, isPracticeModeRef.current);
+        onProgress(currentProgress, 1, false, isPracticeModeRef.current, state.collectedCoins.length);
       }
 
       // Generate a grid of individual rigid shards to shatter the player character

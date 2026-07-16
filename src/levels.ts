@@ -463,7 +463,7 @@ export function uploadCustomLevelToOnline(level: Level, authorName: string): Lev
     orbsReward: orbsMap[level.difficulty] || 0,
     uploadedAt: new Date().toISOString().split('T')[0],
     comments: [
-      { username: 'System', text: '¡Nivel subido con éxito a los servidores de Geometry Dash!', date: new Date().toISOString().split('T')[0] }
+      { username: 'System', text: '¡Nivel subido con éxito a los servidores de Geometry Block!', date: new Date().toISOString().split('T')[0] }
     ]
   };
 
@@ -615,3 +615,26 @@ export function saveLevelPracticeProgress(levelId: string, percentage: number): 
     };
   }
 }
+
+export function getServerBaseUrl(): string {
+  const host = typeof window !== 'undefined' ? window.location.host : '';
+  const isCloudRun = host.endsWith('.run.app');
+  const isLocalExpress = typeof window !== 'undefined' && window.location.port === '3000';
+  if (isCloudRun || isLocalExpress) {
+    return '';
+  }
+  return 'https://ais-dev-jqtt7aqvccdmufemy3wibt-469600523782.europe-west2.run.app';
+}
+
+export function getWebSocketUrl(username: string): string {
+  const host = typeof window !== 'undefined' ? window.location.host : '';
+  const isCloudRun = host.endsWith('.run.app');
+  const isLocalExpress = typeof window !== 'undefined' && window.location.port === '3000';
+  
+  if (isCloudRun || isLocalExpress) {
+    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${host}/ws?username=${encodeURIComponent(username)}`;
+  }
+  return `wss://ais-dev-jqtt7aqvccdmufemy3wibt-469600523782.europe-west2.run.app/ws?username=${encodeURIComponent(username)}`;
+}
+

@@ -10,7 +10,8 @@ import {
   downloadOnlineLevel,
   likeOnlineLevel,
   addOnlineComment,
-  getLevelProgress
+  getLevelProgress,
+  getServerBaseUrl
 } from '../levels';
 import {
   Search,
@@ -182,7 +183,8 @@ export default function OnlineLevelBrowser({ skins, onPlayLevel, onClose, userna
   // Reload online levels from real backend Express API with LocalStorage fallback
   const reloadLevels = async () => {
     try {
-      const res = await fetch('/api/online-levels');
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/online-levels`);
       if (res.ok) {
         const list = await res.json();
         setOnlineLevels(list);
@@ -274,7 +276,8 @@ export default function OnlineLevelBrowser({ skins, onPlayLevel, onClose, userna
       localStorage.setItem('geometry_dash_downloaded_ids', JSON.stringify(updated));
 
       try {
-        await fetch('/api/online-levels/download', {
+        const baseUrl = getServerBaseUrl();
+        await fetch(`${baseUrl}/api/online-levels/download`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: level.id })
@@ -299,7 +302,8 @@ export default function OnlineLevelBrowser({ skins, onPlayLevel, onClose, userna
     localStorage.setItem('geometry_dash_rated_levels', JSON.stringify(updated));
 
     try {
-      const res = await fetch('/api/online-levels/like', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/online-levels/like`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: levelId, isLike })
@@ -332,7 +336,8 @@ export default function OnlineLevelBrowser({ skins, onPlayLevel, onClose, userna
     const text = commentText;
 
     try {
-      const res = await fetch('/api/online-levels/comment', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/online-levels/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: selectedLevel.id, username: cleanUsername, text })
@@ -367,7 +372,8 @@ export default function OnlineLevelBrowser({ skins, onPlayLevel, onClose, userna
     localStorage.setItem('geometry_dash_downloaded_ids', JSON.stringify(updated));
 
     try {
-      const res = await fetch('/api/online-levels/download', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/online-levels/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: level.id })

@@ -8,6 +8,7 @@ import { Level, PlayerSkins, UserProfile } from '../types';
 import { drawCube } from '../skins';
 import { audio } from '../audio';
 import { DifficultyFace } from './OnlineLevelBrowser';
+import { getServerBaseUrl, getWebSocketUrl } from '../levels';
 import { 
   Users, 
   UserPlus, 
@@ -82,8 +83,7 @@ export default function MultiplayerMenu({
 
   // 1. Establish WebSocket Connection
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socketUrl = `${protocol}//${window.location.host}/ws?username=${encodeURIComponent(profile.username)}`;
+    const socketUrl = getWebSocketUrl(profile.username);
     
     const ws = new WebSocket(socketUrl);
     wsRef.current = ws;
@@ -158,19 +158,20 @@ export default function MultiplayerMenu({
   // 2. Load API lists (Friends & Requests)
   const loadFriendsData = async () => {
     try {
-      const pRes = await fetch('/api/players');
+      const baseUrl = getServerBaseUrl();
+      const pRes = await fetch(`${baseUrl}/api/players`);
       if (pRes.ok) {
         const pData = await pRes.json();
         setAllPlayers(pData);
       }
 
-      const fRes = await fetch(`/api/friends/list?username=${encodeURIComponent(profile.username)}`);
+      const fRes = await fetch(`${baseUrl}/api/friends/list?username=${encodeURIComponent(profile.username)}`);
       if (fRes.ok) {
         const fData = await fRes.json();
         setFriendsList(fData);
       }
 
-      const rRes = await fetch(`/api/friends/requests?username=${encodeURIComponent(profile.username)}`);
+      const rRes = await fetch(`${baseUrl}/api/friends/requests?username=${encodeURIComponent(profile.username)}`);
       if (rRes.ok) {
         const rData = await rRes.json();
         setPendingRequests(rData);
@@ -250,7 +251,8 @@ export default function MultiplayerMenu({
   const handleSendFriendRequest = async (targetUsername: string) => {
     audio.playClick();
     try {
-      const res = await fetch('/api/friends/request', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/friends/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: profile.username, to: targetUsername })
@@ -269,7 +271,8 @@ export default function MultiplayerMenu({
   const handleRespondRequest = async (sender: string, action: 'accept' | 'reject') => {
     audio.playClick();
     try {
-      const res = await fetch('/api/friends/respond', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/friends/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: sender, to: profile.username, action })

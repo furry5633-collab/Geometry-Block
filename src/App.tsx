@@ -14,7 +14,8 @@ import {
   saveLevelProgress,
   saveLevelPracticeProgress,
   uploadCustomLevelToOnline,
-  getLevelProgress
+  getLevelProgress,
+  getServerBaseUrl
 } from './levels';
 import { audio } from './audio';
 import GameCanvas from './components/GameCanvas';
@@ -24,6 +25,7 @@ import OnlineLevelBrowser from './components/OnlineLevelBrowser';
 import MultiplayerMenu from './components/MultiplayerMenu';
 import { PlayerLevelBar } from './components/PlayerLevelBar';
 import { LevelRewardsModal } from './components/LevelRewardsModal';
+import { AchievementsModal } from './components/AchievementsModal';
 import {
   Sparkles,
   Play as PlayIcon,
@@ -41,8 +43,14 @@ import {
   Trophy,
   Gem,
   Coins,
-  Users
+  Users,
+  Award,
+  Skull,
+  Globe,
+  ShoppingCart,
+  Star
 } from 'lucide-react';
+import { ACHIEVEMENTS, getAchievementProgress, Achievement } from './achievements';
 
 const DEFAULT_SKINS: PlayerSkins = {
   cube: 'cube_classic',
@@ -131,6 +139,7 @@ export default function App() {
   const [canOpenChest, setCanOpenChest] = useState(true);
   const [showEditorHub, setShowEditorHub] = useState<boolean>(false);
   const [showRewardsModal, setShowRewardsModal] = useState<boolean>(false);
+  const [showAchievementsModal, setShowAchievementsModal] = useState<boolean>(false);
 
   // Custom sandbox-immune modals states
   const [newProjectModal, setNewProjectModal] = useState<boolean>(false);
@@ -224,7 +233,8 @@ export default function App() {
 
       // Also double-check on server if already registered there
       try {
-        const checkRes = await fetch('/api/players');
+        const baseUrl = getServerBaseUrl();
+        const checkRes = await fetch(`${baseUrl}/api/players`);
         if (checkRes.ok) {
           const serverUsers = await checkRes.json();
           const serverExists = serverUsers.some((u: any) => u.username.toLowerCase() === cleanUsername.toLowerCase() && u.passwordHash);
@@ -255,7 +265,8 @@ export default function App() {
 
       // Register/sync with server first so passwordHash is persisted
       try {
-        await fetch('/api/players/register', {
+        const baseUrl = getServerBaseUrl();
+        await fetch(`${baseUrl}/api/players/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -303,7 +314,8 @@ export default function App() {
       // If not found in local accounts, try hitting the server login API!
       if (!account) {
         try {
-          const res = await fetch('/api/players/login', {
+          const baseUrl = getServerBaseUrl();
+          const res = await fetch(`${baseUrl}/api/players/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: cleanUsername, password: cleanPassword })
@@ -382,7 +394,8 @@ export default function App() {
     const registerPlayerOnServer = async () => {
       if (!profile || !profile.username) return;
       try {
-        await fetch('/api/players/register', {
+        const baseUrl = getServerBaseUrl();
+        await fetch(`${baseUrl}/api/players/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -473,6 +486,18 @@ export default function App() {
     });
   };
 
+  const handleClaimAchievement = (achievementId: string, rewardAmount: number) => {
+    setProfile(prev => {
+      const claimed = prev.claimedAchievements || [];
+      if (claimed.includes(achievementId)) return prev; // already claimed
+      return {
+        ...prev,
+        diamonds: prev.diamonds + rewardAmount,
+        claimedAchievements: [...claimed, achievementId]
+      };
+    });
+  };
+
   // Open daily chest prize trigger (strictly enforces 24 hour lockout)
   const handleOpenChest = () => {
     if (!canOpenChest) return;
@@ -505,7 +530,7 @@ export default function App() {
   };
 
   // Callback from GameCanvas when a run finishes or player crashes
-  const handleProgressUpdate = (percentage: number, attemptsCount: number, isWon: boolean, isPractice?: boolean) => {
+  const handleProgressUpdate = (percentage: number, attemptsCount: number, isWon: boolean, isPractice?: boolean, coinsCollectedInRun?: number) => {
     if (!selectedLevel) return;
     
     // Save locally
@@ -533,32 +558,51 @@ export default function App() {
       }
     }
 
-    // Award reward points if level is completed for the first time (only in normal mode!)
-    if ((isWon && !currentProgress.completed && !isPractice) || xpGained > 0) {
-      setProfile(prev => {
-        const starsGained = selectedLevel.starsReward || 3;
-        const orbsGained = selectedLevel.orbsReward || 100;
-        const diamondsGained = Math.ceil(starsGained / 2) + 2;
+    // ALWAYS update profile stats (including deaths, attempts, and coins)
+    setProfile(prev => {
+      // 1. Calculate coins collected across levels to avoid double-counting
+      const coinsByLevel = (prev as any).coinsByLevel || {};
+      const coinsCollected = coinsCollectedInRun || 0;
+      const prevCoinsForLevel = coinsByLevel[selectedLevel.id] || 0;
+      const newCoinsForLevel = Math.max(prevCoinsForLevel, coinsCollected);
+      const updatedCoinsByLevel = {
+        ...coinsByLevel,
+        [selectedLevel.id]: newCoinsForLevel
+      };
+      const nextTotalCoins = Object.values(updatedCoinsByLevel).reduce((sum: number, val: any) => sum + val, 0) as number;
 
-        const currentXP = prev.xp || 0;
-        // Cap level at 100, which is reached at 100 * 200 = 20000 XP
-        const nextXP = Math.min(20000, currentXP + xpGained);
+      // 2. Attempts & Deaths
+      const isDeath = !isWon && !isPractice;
+      const nextAttempts = (prev.totalAttempts || 0) + attemptsCount;
+      const nextDeaths = isDeath ? (prev.totalDeaths || 0) + 1 : (prev.totalDeaths || 0);
 
-        const earnedStars = (isWon && !currentProgress.completed && !isPractice) ? starsGained : 0;
-        const earnedOrbs = (isWon && !currentProgress.completed && !isPractice) ? orbsGained : 0;
-        const earnedDiamonds = (isWon && !currentProgress.completed && !isPractice) ? diamondsGained : 0;
-        const earnedCompleted = (isWon && !currentProgress.completed && !isPractice) ? 1 : 0;
+      // 3. Rewards & Completions (only if won and first completion, or XP gained)
+      const starsGained = selectedLevel.starsReward || 3;
+      const orbsGained = selectedLevel.orbsReward || 100;
+      const diamondsGained = Math.ceil(starsGained / 2) + 2;
 
-        return {
-          ...prev,
-          stars: prev.stars + earnedStars,
-          orbs: prev.orbs + earnedOrbs,
-          diamonds: prev.diamonds + earnedDiamonds,
-          completedCount: prev.completedCount + earnedCompleted,
-          xp: nextXP
-        };
-      });
-    }
+      const currentXP = prev.xp || 0;
+      const nextXP = Math.min(20000, currentXP + xpGained);
+
+      const isFirstNormalCompletion = isWon && !currentProgress.completed && !isPractice;
+      const earnedStars = isFirstNormalCompletion ? starsGained : 0;
+      const earnedOrbs = isFirstNormalCompletion ? orbsGained : 0;
+      const earnedDiamonds = isFirstNormalCompletion ? diamondsGained : 0;
+      const earnedCompleted = isFirstNormalCompletion ? 1 : 0;
+
+      return {
+        ...prev,
+        stars: prev.stars + earnedStars,
+        orbs: prev.orbs + earnedOrbs,
+        diamonds: prev.diamonds + earnedDiamonds,
+        completedCount: prev.completedCount + earnedCompleted,
+        xp: nextXP,
+        totalAttempts: nextAttempts,
+        totalDeaths: nextDeaths,
+        totalCoins: nextTotalCoins,
+        coinsByLevel: updatedCoinsByLevel
+      };
+    });
   };
 
   const handleDeleteLevel = (id: string, e: React.MouseEvent) => {
@@ -588,6 +632,11 @@ export default function App() {
     saveCustomLevel(newLvl);
     setCustomLevels(getCustomLevels());
     localStorage.setItem('geometry_dash_last_edited_id', newLvl.id);
+
+    setProfile(prev => ({
+      ...prev,
+      totalLevelsCreated: (prev.totalLevelsCreated || 0) + 1
+    }));
 
     setSelectedLevel(newLvl);
     setViewState('editor');
@@ -625,13 +674,18 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/online-levels/upload', {
+      const baseUrl = getServerBaseUrl();
+      const res = await fetch(`${baseUrl}/api/online-levels/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ level: publishLevelModal, author: cleanAuthor })
       });
       if (res.ok) {
         const uploaded = await res.json();
+        setProfile(prev => ({
+          ...prev,
+          totalLevelsUploaded: (prev.totalLevelsUploaded || 0) + 1
+        }));
         alert(`¡Nivel "${publishLevelModal.name}" PUBLICADO ONLINE CON ÉXITO! Código de Nivel: ${uploaded.id}\n\nAhora cualquier jugador puede buscarlo, jugarlo, calificarlo y comentarlo.`);
         setViewState('online_browser');
         setPublishLevelModal(null);
@@ -642,6 +696,10 @@ export default function App() {
     }
 
     const onlineLvl = uploadCustomLevelToOnline(publishLevelModal, cleanAuthor);
+    setProfile(prev => ({
+      ...prev,
+      totalLevelsUploaded: (prev.totalLevelsUploaded || 0) + 1
+    }));
     alert(`¡Nivel "${publishLevelModal.name}" guardado en tu caché online local (Servidor temporal).\n\nAhora cualquier jugador en tu navegador puede buscarlo, calificarlo, comentarlo y jugarlo en el Buscador Online.`);
     setViewState('online_browser');
     setPublishLevelModal(null);
@@ -1041,7 +1099,7 @@ export default function App() {
               {/* DOWNLOAD THE SOUNDTRACKS BUTTON */}
               <div className="w-full max-w-[460px] mt-4 sm:mt-5 z-20">
                 <button
-                  onClick={() => alert("🎵 DESCARGAR SOUNDTRACKS 🎵\n\nLas canciones originales de Geometry Dash están disponibles gratis en Newgrounds.\n\n¡Disfruta del juego y crea tus propios mapas con pistas editables!")}
+                  onClick={() => alert("🎵 DESCARGAR SOUNDTRACKS 🎵\n\nLas canciones originales de Geometry Block están disponibles gratis en Newgrounds.\n\n¡Disfruta del juego y crea tus propios mapas con pistas editables!")}
                   className="w-full py-2 bg-[#2d3a60]/85 hover:bg-[#3d4b7c] border-[3px] border-black rounded-xl text-center text-[11px] sm:text-xs font-black uppercase tracking-[0.2em] text-cyan-300 hover:text-white transition cursor-pointer shadow-[0_3.5px_0_#000] active:translate-y-0.5 active:shadow-[0_1px_0_#000] text-shadow-gd"
                   style={{ textShadow: '1.5px 1.5px 0px #000' }}
                 >
@@ -1292,7 +1350,7 @@ export default function App() {
                   filter: 'drop-shadow(0 4px 0 #000000) drop-shadow(0 6px 12px rgba(16,185,129,0.3))',
                   WebkitTextStroke: '2.5px #000000'
                 }}>
-              GEOMETRY DASH
+              GEOMETRY BLOCK
             </h1>
             <p className="text-xs text-green-300 font-mono font-bold uppercase tracking-[0.25em] mt-1 select-none">
               ONLINE SHARING & MULTIPLAYER STUDIO
@@ -1394,26 +1452,43 @@ export default function App() {
           </div>
 
           {/* Daily chest & footer details */}
-          <div className="z-10 flex items-center justify-between mt-auto">
+          <div className="z-10 flex flex-col sm:flex-row items-center gap-3 justify-between mt-auto w-full">
             <div className="text-[10px] font-mono text-purple-200 uppercase tracking-widest">
               SISTEMA DE GUARDADO: <span className="text-green-400 font-bold">ACTIVO</span>
             </div>
 
-            {/* Daily Chest feature trigger with 24h countdown check */}
-            <button
-              onClick={() => {
-                setChestOpened(false);
-                setChestReward('');
-                setShowChestModal(true);
-              }}
-              className={`flex flex-col items-center gap-1 p-2 font-black text-[10px] rounded-xl shadow border-2 border-black active:scale-95 transition tracking-wider uppercase select-none ${canOpenChest ? 'bg-gradient-to-b from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-black' : 'bg-slate-800 text-slate-400 cursor-not-allowed border-slate-700'}`}
-              style={{
-                boxShadow: canOpenChest ? '0 4px 0 #000000' : 'none',
-              }}
-            >
-              <Gift className={`w-4 h-4 ${canOpenChest ? 'text-black animate-bounce' : 'text-slate-500'}`} />
-              {canOpenChest ? 'REGALO DIARIO' : 'REGALO CERRADO'}
-            </button>
+            <div className="flex items-center gap-2.5">
+              {/* Achievements (Logros) button */}
+              <button
+                onClick={() => {
+                  audio.playClick();
+                  setShowAchievementsModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-b from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-black border-2 border-black rounded-xl text-[10px] font-black uppercase tracking-wider shadow active:scale-95 transition select-none cursor-pointer"
+                style={{
+                  boxShadow: '0 3.5px 0 #000000',
+                }}
+              >
+                <Award className="w-3.5 h-3.5 text-black animate-pulse" />
+                LOGROS Y HITOS
+              </button>
+
+              {/* Daily Chest feature trigger with 24h countdown check */}
+              <button
+                onClick={() => {
+                  setChestOpened(false);
+                  setChestReward('');
+                  setShowChestModal(true);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2 font-black text-[10px] border-2 border-black rounded-xl shadow active:scale-95 transition tracking-wider uppercase select-none cursor-pointer ${canOpenChest ? 'bg-gradient-to-b from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-black' : 'bg-slate-800 text-slate-400 cursor-not-allowed border-slate-700'}`}
+                style={{
+                  boxShadow: canOpenChest ? '0 3.5px 0 #000000' : 'none',
+                }}
+              >
+                <Gift className={`w-3.5 h-3.5 ${canOpenChest ? 'text-black animate-bounce' : 'text-slate-500'}`} />
+                {canOpenChest ? 'REGALO DIARIO' : 'REGALO CERRADO'}
+              </button>
+            </div>
           </div>
 
         </motion.div>
@@ -1823,6 +1898,15 @@ export default function App() {
           skins={skins}
           onClaim={handleClaimReward}
           onClose={() => setShowRewardsModal(false)}
+        />
+      )}
+
+      {/* 6. ACHIEVEMENTS & MILESTONES MODAL */}
+      {showAchievementsModal && (
+        <AchievementsModal
+          profile={profile}
+          onClaimAchievement={handleClaimAchievement}
+          onClose={() => setShowAchievementsModal(false)}
         />
       )}
 

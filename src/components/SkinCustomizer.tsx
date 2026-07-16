@@ -99,7 +99,7 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
       setActiveTab(cat);
     } else {
       // Show info/unlocked state for premium un-implemented vehicles
-      alert(`🛸 ¡Vehículo ${cat.toUpperCase()} en camino! Estará disponible en futuras actualizaciones de Geometry Dash.`);
+      alert(`🛸 ¡Vehículo ${cat.toUpperCase()} en camino! Estará disponible en futuras actualizaciones de Geometry Block.`);
     }
   };
 
@@ -599,7 +599,7 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
           )}
 
           <div className="text-center text-[9px] text-slate-500 font-mono mt-2 uppercase tracking-wide">
-            ¡Personaliza colores y diseños para tu jugador de Geometry Dash!
+            ¡Personaliza colores y diseños para tu jugador de Geometry Block!
           </div>
 
         </div>
@@ -627,7 +627,8 @@ export default function SkinCustomizer({ skins, onSkinsChange, onClose, profile,
                 onClick={() => {
                   onProfileChange(prev => ({
                     ...prev,
-                    orbs: prev.orbs - purchaseSkin.cost
+                    orbs: prev.orbs - purchaseSkin.cost,
+                    orbsSpent: (prev.orbsSpent || 0) + purchaseSkin.cost
                   }));
                   setUnlockedSkins(prev => [...prev, purchaseSkin.skinId]);
                   onSkinsChange({

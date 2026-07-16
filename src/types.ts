@@ -88,4 +88,13 @@ export interface UserProfile {
   completedCount: number;
   xp?: number;
   claimedRewards?: number[];
+  
+  // ACHIEVEMENT STATS
+  totalDeaths?: number;
+  totalAttempts?: number;
+  totalCoins?: number;
+  totalLevelsCreated?: number;
+  totalLevelsUploaded?: number;
+  orbsSpent?: number;
+  claimedAchievements?: string[]; // list of achievement IDs claimed
 }
